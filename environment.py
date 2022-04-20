@@ -1,3 +1,5 @@
+"""Environment handles state normalization, tracks agent performance, and parallelizes environments across batch."""
+
 import numpy as np
 import tensorflow as tf
 # TODO - may want to add other statistics for environment to keep track of (e.g. explained variance)
@@ -12,7 +14,7 @@ class tf_env:
         # keep track of the following metrics
         self.cum_rewards = [0. for i in range(len(env_list))]  # cumulative reward for each environment (no discounting)
         self.recent_rewards = [0. for i in range(mem)]  # 50 most recent cumulative rewards (no discounting)
-        self.num_steps = [0 for i in range(len(env_list))]  # number of steps in each environment
+        self.num_steps = np.array([0 for i in range(len(env_list))], dtype=np.int32)  # number of steps in each environment
         self.ep_lens = [0 for i in range(mem)] # 50 most recent episode lengths
         self.mem = mem
         self.mem_count = 0
@@ -23,8 +25,18 @@ class tf_env:
         self.M = np.array([[0 for i in range(statedim)]], dtype=np.float32)
 
     def step(self, batch_actions):
-        """Does a single step for each environment."""
+        """Does a single step for each environment. Needs to be wrapped in tf_env_step.
+
+        Args:
+            batch_actions: tensor of shape (num_environments, action_dims)
+        Returns:
+            states: np.float32 array with shape (num_environments, state_dims)
+            rewards: np.float32 array with shape (num_environments,)
+            dones: np.int32 array with shape (num_environments,)
+            times: np.int32 array with shape (num_environments,)
+        """
         states, rewards, dones = [], [], []
+        times = np.copy(self.num_steps)
         for count, env in enumerate(self.env_list):
             action = batch_actions[count]
             state, reward, done, _ = env.step(action)
@@ -47,7 +59,7 @@ class tf_env:
         rewards = np.stack(rewards, axis=0)
         dones = np.stack(dones, axis=0)
         states = self.apply_state_normalization(states)
-        return states, rewards, dones
+        return states, rewards, dones, times
 
     def apply_state_normalization(self, states):
         for i in range(len(states)):
@@ -67,5 +79,5 @@ class tf_env:
 def make_tf_env_step(env):
     """Make tf_env_step which wraps the environment so we can decorate with tf.function."""
     def tf_env_step(actions):
-        return tf.numpy_function(env.step(), [actions], [tf.float32, tf.float32, tf.int32])
+        return tf.numpy_function(env.step, [actions], [tf.float32, tf.float32, tf.int32, tf.int32])
     return tf_env_step
