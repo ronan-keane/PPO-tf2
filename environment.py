@@ -5,17 +5,18 @@ import tensorflow as tf
 # TODO - may want to add other statistics for environment to keep track of (e.g. explained variance)
 
 class tf_env:
-    """Wrapper for a list of gym-like environments."""
-    def __init__(self, env_list, statedim=None, mem=50):
+    """Wrapper for a list of gym-like environments. Tracks some statistics and handles state normalization."""
+    def __init__(self, env_list, statedim=None, mem=50, T=None):
         """env_list: list of gym-like environments."""
         self.env_list = env_list
         self.statedim = len(env_list[0].reset()) if statedim is None else statedim
+        self.T = T
 
         # keep track of the following metrics
         self.cum_rewards = [0. for i in range(len(env_list))]  # cumulative reward for each environment (no discounting)
         self.recent_rewards = [0. for i in range(mem)]  # 50 most recent cumulative rewards (no discounting)
-        self.num_steps = np.array([0 for i in range(len(env_list))], dtype=np.int32)  # number of steps in each environment
-        self.ep_lens = [0 for i in range(mem)] # 50 most recent episode lengths
+        self.num_steps = np.array([0. for i in range(len(env_list))], dtype=np.float32)  # number of steps in each environment
+        self.ep_lens = [0. for i in range(mem)] # 50 most recent episode lengths
         self.mem = mem
         self.mem_count = 0
 
@@ -32,8 +33,8 @@ class tf_env:
         Returns:
             states: np.float32 array with shape (num_environments, state_dims)
             rewards: np.float32 array with shape (num_environments,)
-            dones: np.int32 array with shape (num_environments,)
-            times: np.int32 array with shape (num_environments,)
+            dones: np.float32 array with shape (num_environments,)
+            times: np.float32 array with shape (num_environments,)
         """
         states, rewards, dones = [], [], []
         times = np.copy(self.num_steps)
@@ -48,12 +49,12 @@ class tf_env:
                 self.recent_rewards[self.mem_count] = self.cum_rewards[count]
                 self.ep_lens[self.mem_count] = self.num_steps[count]
                 self.cum_rewards[count] = 0.
-                self.num_steps[count] = 0
+                self.num_steps[count] = 0.
                 self.mem_count = (self.mem_count+1)%self.mem
 
             states.append(state.astype(np.float32))
             rewards.append(reward.astype(np.float32))
-            dones.append(done.astype(np.int32))
+            dones.append(done.astype(np.float32))
 
         states = np.stack(states, axis=0)
         rewards = np.stack(rewards, axis=0)
@@ -79,5 +80,5 @@ class tf_env:
 def make_tf_env_step(env):
     """Make tf_env_step which wraps the environment so we can decorate with tf.function."""
     def tf_env_step(actions):
-        return tf.numpy_function(env.step, [actions], [tf.float32, tf.float32, tf.int32, tf.int32])
+        return tf.numpy_function(env.step, [actions], [tf.float32, tf.float32, tf.float32, tf.float32])
     return tf_env_step

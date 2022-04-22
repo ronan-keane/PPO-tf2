@@ -39,8 +39,10 @@ class DiscreteActor(tf.keras.Model):
         actions_probs = tf.gather(actions_probs, actions, axis=1, batch_dims=1)
         return tf.math.log(actions_probs)
 
+
 class TimeAwareValue(tf.keras.Model):
     """Regular MLP which learns a time-aware value function (https://arxiv.org/abs/1802.10031). """
+    # needs get_values method.
     def __init__(self, num_hidden=64, num_layers=2, activation='tanh'):
         super().__init__()
 
@@ -56,6 +58,36 @@ class TimeAwareValue(tf.keras.Model):
     def get_values(self, states, times, gamma, T):
         values = self.call(states)
         return values[:,0]*(1 - tf.math.pow(gamma, T-times+1))/(1-gamma)+values[:,1]
+
+    def unnormalize_values(self, values):
+        return values
+
+    def normalize_returns(self, returns):
+        return returns
+
+def normalize_value(value):
+    """Decorates value function approximator by adding normalization."""
+    class NormalizedValue(value):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.n = 0
+            self.mean = 0
+            self.M = 0
+
+        def unnormalize_values(self, values):
+            return values*(self.M/self.n)**.5+self.mean
+
+        def normalize_returns(self, returns):
+            for i in tf.reshape(returns, [-1]):
+                self.n += 1
+                delta = i - self.mean
+                self.mean += delta/self.n
+                delta2 = i-self.mean
+                self.M += delta*delta2
+            return (returns - self.mean)/(self.M/self.n)**.5
+
+    return NormalizedValue
+
 
 class continuous_actor(tf.keras.Model):
     """Regular MLP for a policy which outputs a normal distribution on each action dimension."""
