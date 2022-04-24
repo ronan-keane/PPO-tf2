@@ -2,15 +2,13 @@
 
 import numpy as np
 import tensorflow as tf
-# TODO - may want to add other statistics for environment to keep track of (e.g. explained variance)
 
-class tf_env:
+class TFEnv:
     """Wrapper for a list of gym-like environments. Tracks some statistics and handles state normalization."""
-    def __init__(self, env_list, statedim=None, mem=50, T=None):
+    def __init__(self, env_list, statedim=None, mem=50, mem2=5):
         """env_list: list of gym-like environments."""
         self.env_list = env_list
         self.statedim = len(env_list[0].reset()) if statedim is None else statedim
-        self.T = T
 
         # keep track of the following metrics
         self.cum_rewards = [0. for i in range(len(env_list))]  # cumulative reward for each environment (no discounting)
@@ -19,6 +17,9 @@ class tf_env:
         self.ep_lens = [0. for i in range(mem)] # 50 most recent episode lengths
         self.mem = mem
         self.mem_count = 0
+        self.EVs = [0. for i in range(mem2)]
+        self.mem2 = mem2
+        self.mem2_count = 0
 
         # state normalization parameters
         self.n = 0

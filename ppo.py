@@ -1,20 +1,30 @@
-"""Defines PPO algorithm based on (https://arxiv.org/abs/1707.06347)."""
+"""Defines Proximal Policy Optimization (PPO) algorithm based on (https://arxiv.org/abs/1707.06347)."""
 import tensorflow as tf
 import numpy as np
 
 
 class PPO:
     """Wrapper for PPO."""
-    def __init__(self, policy, value, tf_env_step, gamma, kappa, T):
+    def __init__(self, policy, value, policy_optimizer, value_optimizer, env, tf_env_step, gamma, kappa, T):
         self.policy = policy
         self.value = value
+        self.policy_optimizer = policy_optimizer
+        self.value_optimizer = value_optimizer
+        self.env = env
         self.tf_env_step = tf_env_step
         self.gamma = gamma
         self.kappa = kappa
         self.T = T
 
-    def step(self, nepochs, nsteps, cur_states):
-        ppo_step()
+    def step(self, cur_states, nepochs, nsteps, batch_size, clip):
+        """Generates nsteps of experience and does PPO update for nepochs."""
+        cur_states, EVs = ppo_step(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
+            self.tf_env_step, nepochs, nsteps, batch_size, cur_states, self.gamma, self.kappa, self.T, clip)
+
+        self.env.EVs[self.env.mem2_count] = EVs.numpy()
+        self.env.mem2_count = (self.env.mem2_count+1)%self.env.mem2
+        return cur_states
+
 
 def make_training_data(cur_states, tf_env_step, nsteps, policy):
     """For each environment, simulate nsteps transitions and record all data."""
@@ -48,9 +58,9 @@ def make_training_data(cur_states, tf_env_step, nsteps, policy):
     action_log_probs = tf.tranpose(action_log_probs.stack(), perm=[1,0,2])
     return states, actions, rewards, dones, times, action_log_probs, cur_states
 
-def ppo_step(policy, value, tf_env_step, nepochs, nsteps, batch_size, cur_states, gamma, kappa, T):
+def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepochs, nsteps, batch_size,
+             cur_states, gamma, kappa, T, clip):
     """Generates nsteps of experience and does PPO update for nepochs."""
-    # record transitions
     states, actions, rewards, dones, times, action_log_probs, cur_states = \
         make_training_data(cur_states, tf_env_step, nsteps, policy)
     # reshaping
@@ -62,14 +72,16 @@ def ppo_step(policy, value, tf_env_step, nepochs, nsteps, batch_size, cur_states
     cur_times = times[:,-1]+1
     times = tf.reshape(times, [n_transitions])
 
+    EVs = tf.TensorArray(tf.float32, size=(nepochs,), dynamic_size=False)
     for i in tf.range(nepochs):
         # advantages and returns are recomputed once per epoch
-        returns, advantages = compute_returns_advantages(
+        returns, advantages, EV = compute_returns_advantages(
             value, states, rewards, dones, times, cur_states, cur_times, gamma, kappa, T)
         returns = tf.reshape(returns, [n_transitions])
         advantages = tf.reshape(advantages, [n_transitions])
+        EVs = EVs.write(i, EV)  # explained variance
 
-        # make mini-batches
+        # make mini-batches. the mini-batches all have batch_size as their first dimension.
         inds = tf.random.shuffle(tf.range(n_transitions))
         for j in tf.range(n_transitions // batch_size):
             ind = inds[j*batch_size:(j+1)*batch_size]
@@ -77,10 +89,22 @@ def ppo_step(policy, value, tf_env_step, nepochs, nsteps, batch_size, cur_states
                 tf.gather(states, ind), tf.gather(actions, ind), tf.gather(action_log_probs, ind), \
                 tf.gather(times, ind), tf.gather(returns, ind), tf.gather(advantages, ind)
 
+            mb_step(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
+                    mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip)
+
+    return cur_states, EVs.stack()
+
 
 def compute_returns_advantages(value, states, rewards, dones, times, cur_states, cur_times, gamma, kappa, T):
     """Compute returns and advantages using GAE."""
-    # states - (n_envs*nsteps, state_dim); times - (n_envs*nsteps); rewards and dones: (n_envs, nsteps)
+    # Args:
+    # states - (n_envs*nsteps, state_dim); times - (n_envs*nsteps); rewards, dones: (n_envs, nsteps)
+    # cur_states - (n_envs, state_dim) the final states. cur_times: (n_envs,) times for cur_states
+    # note kappa is the GAE hyperparameter (called \lambda in original paper)
+    # Returns:
+    # normalized returns: (n_envs, nsteps) (value function targets)
+    # advantages: (n_envs, nsteps)
+    # explained variance: scalar measures how well fit value function is, EV = 1 is perfect prediction
     shape = tf.shape(rewards)
     values = value.get_values(states, times, gamma, T)
     values = value.unnormalize_values(values)
@@ -96,13 +120,30 @@ def compute_returns_advantages(value, states, rewards, dones, times, cur_states,
         next_values = values[:,ind]
         returns = returns.write(ind, cur_returns)
 
-    returns = tf.transpose(returns.stack(), perm=[1,0])  # shape is (num_envs, nsteps)
+    returns = tf.transpose(returns.stack(), perm=[1,0])
     normal_returns = value.normalize_returns(returns)
-    return normal_returns, returns-values
+    advs = returns - values
+    EV = tf.math.reduce_std(advs)**2/tf.math.reduce_std(values)**2
+    return normal_returns, advs, 1-EV
 
-def mb_step(policy_optimizer, value_optimizer):
+def mb_step(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
+            value_optimizer, gamma, T, clip):
     """PPO update for a single mini-batch."""
-    pass
+    # policy update
+    with tf.GradientTape() as g:
+        new_log_probs = policy.log_probs_from_actions(states, actions)
+    impt_weights = tf.exp(new_log_probs-action_log_probs)  # importance sampling weights
+    ppo_mask = tf.math.logical_or(tf.math.logical_and(tf.math.greater(advantages, 0), tf.math.greater(impt_weights, 1+clip)),
+                                  tf.math.logical_and(tf.math.less(advantages,0), tf.math.less(impt_weights, 1-clip)))
+    ppo_mask = tf.cast(tf.logical_not(ppo_mask), tf.float32)
+    policy_gradient = g.gradient(new_log_probs, policy.trainable_variables,
+                                 output_gradients=-advantages*impt_weights*ppo_mask)
+    policy_optimizer.apply_gradients(zip(policy_gradient, policy.trainable_variables))
+    # value function update
+    with tf.GradientTape() as g:
+        values = value.get_values(states, times, gamma, T)
+    value_gradient = g.gradient(values, value.trainable_variables, output_gradients=-2*(returns-values))
+    value_optimizer.apply_gradients(zip(value_gradient, value.trainable_variables))
 
 
 
