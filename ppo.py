@@ -4,8 +4,8 @@ import numpy as np
 
 
 class PPO:
-    """Wrapper for PPO."""
-    def __init__(self, policy, value, policy_optimizer, value_optimizer, env, tf_env_step, gamma, kappa, T):
+    """Wrapper for PPO. See also ppo_step."""
+    def __init__(self, policy, value, policy_optimizer, value_optimizer, env, tf_env_step, gamma, kappa, T, clip):
         self.policy = policy
         self.value = value
         self.policy_optimizer = policy_optimizer
@@ -15,11 +15,12 @@ class PPO:
         self.gamma = gamma
         self.kappa = kappa
         self.T = T
+        self.clip = clip
 
     def step(self, cur_states, nepochs, nsteps, batch_size, clip):
         """Generates nsteps of experience and does PPO update for nepochs."""
         cur_states, EVs = ppo_step(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
-            self.tf_env_step, nepochs, nsteps, batch_size, cur_states, self.gamma, self.kappa, self.T, clip)
+            self.tf_env_step, nepochs, nsteps, batch_size, cur_states, self.gamma, self.kappa, self.T, self.clip)
 
         self.env.EVs[self.env.mem2_count] = EVs.numpy()
         self.env.mem2_count = (self.env.mem2_count+1)%self.env.mem2
@@ -60,7 +61,26 @@ def make_training_data(cur_states, tf_env_step, nsteps, policy):
 
 def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepochs, nsteps, batch_size,
              cur_states, gamma, kappa, T, clip):
-    """Generates nsteps of experience and does PPO update for nepochs."""
+    """Generates nsteps of experience and does PPO update for nepochs.
+
+    Args:
+        policy: policy network. Needs the methods `log_probs_and_sample` and `log_probs_from_actions`
+        value: value network. Needs the methods `get_values`, `unnormalize_values`, and `normalize_returns`
+        policy_optimizer: optimizer for policy. Any tf.keras.optimizers.Optimizer
+        value_optimizer: optimizer for value. Any tf.keras.optimizers.Optimizer
+        tf_env_step: environment step function, compatible with tf.function (see make_tf_env_step)
+        nepochs: number of epochs to train on all transitions
+        nsteps: sample nsteps transitions from each environment
+        batch_size: mini-batch size for gradient updates
+        cur_states: initial environment states. Tensor of shape (n_envs, state_dim)
+        gamma: discount factor [0, 1)
+        kappa: GAE discount factor [0, 1)
+        T: maximum number of transitions per episode
+        clip: clipping range for PPO.
+    Returns:
+        cur_states: Tensor of shape (n_envs, state_dim), environment states for start of next iteration.
+        EVs: Tensor of shape (nepochs,). Explained variance for each epoch. Higher is better, max is 1.
+    """
     states, actions, rewards, dones, times, action_log_probs, cur_states = \
         make_training_data(cur_states, tf_env_step, nsteps, policy)
     # reshaping

@@ -5,26 +5,26 @@ import tensorflow as tf
 
 class TFEnv:
     """Wrapper for a list of gym-like environments. Tracks some statistics and handles state normalization."""
-    def __init__(self, env_list, statedim=None, mem=50, mem2=5):
+    def __init__(self, env_list, state_dim=None, mem=50, mem2=5):
         """env_list: list of gym-like environments."""
         self.env_list = env_list
-        self.statedim = len(env_list[0].reset()) if statedim is None else statedim
+        self.state_dim = len(env_list[0].reset()) if state_dim is None else state_dim
 
         # keep track of the following metrics
         self.cum_rewards = [0. for i in range(len(env_list))]  # cumulative reward for each environment (no discounting)
         self.recent_rewards = [0. for i in range(mem)]  # 50 most recent cumulative rewards (no discounting)
         self.num_steps = np.array([0. for i in range(len(env_list))], dtype=np.float32)  # number of steps in each environment
         self.ep_lens = [0. for i in range(mem)] # 50 most recent episode lengths
-        self.mem = mem
+        self.mem = mem  # memory length for recent rewards/ep_lens
         self.mem_count = 0
-        self.EVs = [0. for i in range(mem2)]
+        self.EVs = [0. for i in range(mem2)]  # each entry is a numpy list of explained variances for that ppo step
         self.mem2 = mem2
         self.mem2_count = 0
 
         # state normalization parameters
         self.n = 0
-        self.means = np.array([[0 for i in range(statedim)]], dtype=np.float32)
-        self.M = np.array([[0 for i in range(statedim)]], dtype=np.float32)
+        self.means = np.array([[0 for i in range(state_dim)]], dtype=np.float32)
+        self.M = np.array([[0 for i in range(state_dim)]], dtype=np.float32)
 
     def step(self, batch_actions):
         """Does a single step for each environment. Needs to be wrapped in tf_env_step.
