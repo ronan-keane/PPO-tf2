@@ -128,12 +128,13 @@ def normalize_value(value):
     class NormalizedValue(value):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
-            self.n = 0
-            self.mean = 0
-            self.M = 0
+            self.n = tf.cast(0., tf.float32)
+            self.mean = tf.cast(0., tf.float32)
+            self.M = tf.cast(0., tf.float32)
 
         def unnormalize_values(self, values):
-            return values*(self.M/self.n)**.5+self.mean
+            return tf.cond(tf.math.equal(self.n, tf.cast(0., tf.float32)),
+                           lambda: values, lambda: values*(self.M/self.n)**.5+self.mean)
 
         def normalize_returns(self, returns):
             """Update empirical mean/std and calculate normalized returns."""

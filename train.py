@@ -1,5 +1,6 @@
 """Trains an agent on specified environment."""
 import tensorflow as tf
+import numpy as np
 import gym
 from train_setup import train_setup, LinearDecreaseLR
 import tqdm
@@ -30,11 +31,12 @@ if __name__ == '__main__':
     optimizer = tf.keras.optimizers.Adam
     lr_max = 6e-4
     lr_min = 1e-5
-    ############ AMOUNT OF TRAINING ############
+    ############ AMOUNT OF TRAINING #############
     total_transitions = 1000000  # total number of sampled transitions, combined over all environments
     nepochs = 10  # number of epochs to train each iteration
     nsteps = 1000  # each iteration samples nsteps transitions from each environment
     batch_size = 25  # mini-batch size for gradient updates
+    #############################################
 
     policy_lr = LinearDecreaseLR(lr_max, lr_min, total_transitions, n_envs, nepochs, nsteps, batch_size)
     value_lr = LinearDecreaseLR(lr_max, lr_min, total_transitions, n_envs, nepochs, nsteps, batch_size)
@@ -43,11 +45,11 @@ if __name__ == '__main__':
                       time_aware, gamma, kappa, env_list, T, clip, global_clipnorm, policy_lr, value_lr, optimizer)
     tf_env = ppo.env
     n_updates = total_transitions // (n_envs*nsteps)
-    for i in range(n_updates):
+    pbar = tqdm.tqdm(range(n_updates))
+    pbar.set_description('Calculating first iteration'.format(0))
+    for i in pbar:
         cur_states = ppo.step(cur_states, nepochs, nsteps, batch_size, clip)
-
-
-
-
-
+        pbar.set_description('Iteration {:.0f}'.format(i))
+        ep_rewards, ep_lens, ev = np.mean(tf_env.recent_rewards), np.mean(tf_env.ep_lens), np.mean(tf_env.EVs[tf_env.mem2_count-1])
+        pbar.set_postfix_str('Avg ep reward={:.2f}, Avg ep len={:.0f}, Explained var={:.2f}'.format(ep_rewards, ep_lens, ev))
 

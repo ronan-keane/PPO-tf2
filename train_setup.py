@@ -50,9 +50,8 @@ def train_setup(policy_num_hidden, policy_num_layers, policy_activation, action_
         ppo: PPO class with .step method that implements an iteration of PPO.
     """
     # make environment
-    n_envs = len(env_list)
     state_dim = len(env_list[0].reset())
-    tf_env = TFEnv(env_list, state_dim=state_dim)
+    tf_env = TFEnv(env_list, is_cont=continuous_actions, state_dim=state_dim)
     tf_env_step = make_tf_env_step(tf_env)
     cur_states = tf_env.reset()
     # make policy -  also make the output layer kernel weights smaller, for a more uniform initial policy
@@ -60,21 +59,22 @@ def train_setup(policy_num_hidden, policy_num_layers, policy_activation, action_
         policy = ContinuousActor(action_dim, policy_num_hidden, policy_num_layers, policy_activation, std_offset=std_offset)
         policy(cur_states)
         output_kernel, output_bias = policy.layers[-1].get_weights()
-        policy.layer[-1].set_weights([output_kernel/100, output_bias])  # for std devs
+        policy.layers[-1].set_weights([output_kernel/100, output_bias])  # for std devs
         output_kernel, output_bias = policy.layers[-1].get_weights()
-        policy.layer[-3].set_weights([output_kernel/100, output_bias])  # for means
+        policy.layers[-3].set_weights([output_kernel/100, output_bias])  # for means
     else:
         policy = DiscreteActor(action_dim, policy_num_hidden, policy_num_layers, policy_activation)
         policy(cur_states)
         output_kernel, output_bias = policy.layers[-1].get_weights()
-        policy.layer[-1].set_weights([output_kernel/100, output_bias])
+        policy.layers[-1].set_weights([output_kernel/100, output_bias])
     # make value function
     value = TimeAwareValue if time_aware else RegularValue
     value = value if not value_normalization else normalize_value(value)
     value = value(value_num_hidden, value_num_layers, value_activation)
+    value(cur_states)
     # make optimizers
     policy_optimizer = optimizer(learning_rate=policy_lr, global_clipnorm=global_clipnorm)
     value_optimizer = optimizer(learning_rate=value_lr, global_clipnorm=global_clipnorm)
     #make ppo algorithm
-    ppo = PPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T, clip)
+    ppo = PPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T, clip, continuous_actions)
     return ppo, cur_states

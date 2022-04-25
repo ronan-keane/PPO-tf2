@@ -5,10 +5,11 @@ import tensorflow as tf
 
 class TFEnv:
     """Wrapper for a list of gym-like environments. Tracks some statistics and handles state normalization."""
-    def __init__(self, env_list, state_dim=None, mem=50, mem2=5):
+    def __init__(self, env_list, is_cont=False, state_dim=None, mem=50, mem2=5):
         """env_list: list of gym-like environments."""
         self.env_list = env_list
         self.state_dim = len(env_list[0].reset()) if state_dim is None else state_dim
+        self.is_cont = is_cont
 
         # keep track of the following metrics
         self.cum_rewards = [0. for i in range(len(env_list))]  # cumulative reward for each environment (no discounting)
@@ -40,13 +41,13 @@ class TFEnv:
         states, rewards, dones = [], [], []
         times = np.copy(self.num_steps)
         for count, env in enumerate(self.env_list):
-            action = batch_actions[count]
+            action = batch_actions[count] if self.is_cont else batch_actions[count,0]
             state, reward, done, _ = env.step(action)
-            self.cum_rewards[count] += rewards
+            self.cum_rewards[count] += reward
             self.num_steps[count] += 1
 
             if done == 1:
-                state = self.reset_env(env)
+                state = env.reset()
                 self.recent_rewards[self.mem_count] = self.cum_rewards[count]
                 self.ep_lens[self.mem_count] = self.num_steps[count]
                 self.cum_rewards[count] = 0.
@@ -54,12 +55,12 @@ class TFEnv:
                 self.mem_count = (self.mem_count+1)%self.mem
 
             states.append(state.astype(np.float32))
-            rewards.append(reward.astype(np.float32))
-            dones.append(done.astype(np.float32))
+            rewards.append(reward)
+            dones.append(done)
 
         states = np.stack(states, axis=0)
-        rewards = np.stack(rewards, axis=0)
-        dones = np.stack(dones, axis=0)
+        rewards = np.array(rewards, dtype=np.float32)
+        dones = np.array(dones, dtype=np.float32)
         states = self.apply_state_normalization(states)
         return states, rewards, dones, times
 
