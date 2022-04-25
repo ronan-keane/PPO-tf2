@@ -29,7 +29,7 @@ class PPO:
         self.env.mem2_count = (self.env.mem2_count+1)%self.env.mem2
         return cur_states
 
-@tf.function
+# @tf.function
 def make_training_data(cur_states, tf_env_step, nsteps, policy, is_cont):
     """For each environment, simulate nsteps transitions and record all data."""
     action_dtype = tf.float32 if is_cont else tf.int32
@@ -63,7 +63,7 @@ def make_training_data(cur_states, tf_env_step, nsteps, policy, is_cont):
     action_log_probs = tf.transpose(action_log_probs.stack(), perm=[1,0,2])
     return states, actions, rewards, dones, times, action_log_probs, cur_states
 
-@tf.function
+# @tf.function
 def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepochs, nsteps, batch_size,
              cur_states, gamma, kappa, T, clip, is_cont):
     """Generates nsteps of experience and does PPO update for nepochs.
@@ -120,7 +120,7 @@ def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepo
 
     return cur_states, EVs.stack()
 
-@tf.function
+# @tf.function
 def compute_returns_advantages(value, states, rewards, dones, times, cur_states, cur_times, gamma, kappa, T):
     """Compute returns and advantages using GAE."""
     # Args:
@@ -131,7 +131,7 @@ def compute_returns_advantages(value, states, rewards, dones, times, cur_states,
     # normalized returns: (n_envs, nsteps) (value function targets)
     # advantages: (n_envs, nsteps)
     # explained variance: scalar measures how well fit value function is, EV = 1 is perfect prediction
-    shape = tf.shape(rewards)
+    shape = tf.shape(rewards)  # bug is around here?
     values = value.get_values(states, times, gamma, T)
     values = value.unnormalize_values(values)
     values = tf.reshape(values, [shape[0], shape[1]])
@@ -154,7 +154,7 @@ def compute_returns_advantages(value, states, rewards, dones, times, cur_states,
     EV = tf.math.reduce_std(advs)**2/tf.math.reduce_std(values)**2
     return normal_returns, advs, 1-EV
 
-@tf.function
+# @tf.function
 def mb_step(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
             value_optimizer, gamma, T, clip):
     """PPO update for a single mini-batch."""

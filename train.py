@@ -10,9 +10,10 @@ if __name__ == '__main__':
     # see train_setup
     ############ ENVIRONMENT ###################
     n_envs = 4
-    env_list = [gym.make('CartPole-v1') for i in range(n_envs)]
-    T = 500
-    action_dim = 2
+    # env_list = [gym.make('CartPole-v1') for i in range(n_envs)]
+    env_list = [gym.make('LunarLander-v2') for i in range(n_envs)]
+    T = 1000
+    action_dim = 4
     continuous_actions = False
     ############ HYPERPARAMETERS ###############
     policy_num_hidden = 64

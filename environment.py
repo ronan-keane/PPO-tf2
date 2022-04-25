@@ -23,7 +23,7 @@ class TFEnv:
         self.mem2_count = 0
 
         # state normalization parameters
-        self.n = 0
+        self.n = 0.
         self.means = np.array([[0 for i in range(state_dim)]], dtype=np.float32)
         self.M = np.array([[0 for i in range(state_dim)]], dtype=np.float32)
 
@@ -71,7 +71,7 @@ class TFEnv:
             self.means[0] += delta/self.n
             delta2 = states[i] - self.means[0]
             self.M[0] += delta*delta2
-        return (states - self.means)/(self.M/self.n)**.5
+        return (states - self.means)/np.maximum((self.M/self.n),1e-4)**.5
 
     def reset(self):
         """Resets all environments and returns initial states."""
