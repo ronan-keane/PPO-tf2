@@ -1,15 +1,22 @@
 """Environment handles state normalization, tracks agent performance, and parallelizes environments across batch."""
-
 import numpy as np
 import tensorflow as tf
 
+
 class TFEnv:
     """Wrapper for a list of gym-like environments. Tracks some statistics and handles state normalization."""
-    def __init__(self, env_list, is_cont=False, state_dim=None, mem=50, mem2=5):
+    def __init__(self, env_list, is_cont=False, clip_type='tanh', state_dim=None, mem=50, mem2=5):
         """env_list: list of gym-like environments."""
         self.env_list = env_list
         self.state_dim = len(env_list[0].reset()) if state_dim is None else state_dim
-        self.is_cont = is_cont
+        if not is_cont:
+            self.process_action = lambda actions, count: actions[count, 0]
+        elif clip_type=='tanh':
+            self.process_action = lambda actions, count: np.tanh(actions[count])
+        elif clip_type=='clip':
+            self.process_action = lambda actions, count: np.clip(actions[count], -1, 1)
+        else:
+            self.process_action = clip_type
 
         # keep track of the following metrics
         self.cum_rewards = [0. for i in range(len(env_list))]  # cumulative reward for each environment (no discounting)
@@ -38,10 +45,11 @@ class TFEnv:
             dones: np.float32 array with shape (num_environments,)
             times: np.float32 array with shape (num_environments,)
         """
+        # TODO may want to add ability to step the environments in parralel
         states, rewards, dones = [], [], []
         times = np.copy(self.num_steps)
         for count, env in enumerate(self.env_list):
-            action = batch_actions[count] if self.is_cont else batch_actions[count,0]
+            action = self.process_action(batch_actions, count)
             state, reward, done, _ = env.step(action)
             self.cum_rewards[count] += reward
             self.num_steps[count] += 1

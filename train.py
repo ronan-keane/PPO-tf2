@@ -7,20 +7,21 @@ import tqdm
 
 
 if __name__ == '__main__':
-    # see train_setup
+    # hyperparameter documentation in train_setup
     ############ ENVIRONMENT ###################
     n_envs = 4
-    # env_list = [gym.make('CartPole-v1') for i in range(n_envs)]
-    env_list = [gym.make('LunarLander-v2') for i in range(n_envs)]
-    T = 1000
-    action_dim = 4
-    continuous_actions = False
+    env_list = [gym.make('Pendulum-v1') for i in range(n_envs)]
+    T = 200
+    action_dim = 1
+    continuous_actions = True
     ############ HYPERPARAMETERS ###############
     policy_num_hidden = 64
     policy_num_layers = 2
     policy_activation = 'tanh'
     std_offset = 0.5
-    value_num_hidden = 64
+    state_dependent = True
+    clip_type = 'tanh'
+    value_num_hidden = 100
     value_num_layers = 2
     value_activation = 'tanh'
     value_normalization = True
@@ -28,22 +29,24 @@ if __name__ == '__main__':
     gamma = 0.99
     kappa = 0.95
     clip = 0.2
-    global_clipnorm = None
+    global_clipnorm = 1
     optimizer = tf.keras.optimizers.Adam
-    lr_max = 6e-4
-    lr_min = 1e-5
-    ############ AMOUNT OF TRAINING #############
-    total_transitions = 1000000  # total number of sampled transitions, combined over all environments
+    lr_max_policy = 6e-4  # policy learning rate on first iteration
+    lr_min_policy = 1e-5  # policy learning rate on last iteration
+    lr_max_value = 6e-4
+    lr_min_value = 1e-5
     nepochs = 10  # number of epochs to train each iteration
     nsteps = 1000  # each iteration samples nsteps transitions from each environment
     batch_size = 25  # mini-batch size for gradient updates
-    #############################################
+    ############ AMOUNT OF TRAINING #############
+    total_transitions = 1000000  # total number of sampled transitions, combined over all environments
 
-    policy_lr = LinearDecreaseLR(lr_max, lr_min, total_transitions, n_envs, nepochs, nsteps, batch_size)
-    value_lr = LinearDecreaseLR(lr_max, lr_min, total_transitions, n_envs, nepochs, nsteps, batch_size)
+
+    policy_lr = LinearDecreaseLR(lr_max_policy, lr_min_policy, total_transitions, n_envs, nepochs, nsteps, batch_size)
+    value_lr = LinearDecreaseLR(lr_max_policy, lr_min_policy, total_transitions, n_envs, nepochs, nsteps, batch_size)
     ppo, cur_states = train_setup(policy_num_hidden, policy_num_layers, policy_activation, action_dim, continuous_actions,
-                      std_offset, value_num_hidden, value_num_layers, value_activation, value_normalization,
-                      time_aware, gamma, kappa, env_list, T, clip, global_clipnorm, policy_lr, value_lr, optimizer)
+        std_offset, state_dependent, clip_type, value_num_hidden, value_num_layers, value_activation, value_normalization,
+        time_aware, gamma, kappa, env_list, T, clip, global_clipnorm, policy_lr, value_lr, optimizer)
     tf_env = ppo.env
     n_updates = total_transitions // (n_envs*nsteps)
     pbar = tqdm.tqdm(range(n_updates))

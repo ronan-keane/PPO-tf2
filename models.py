@@ -1,6 +1,6 @@
 """Defines the function approximators used for the policy and value function."""
-
 import tensorflow as tf
+
 
 class SimpleMLP(tf.keras.Model):
     def __init__(self, num_hidden, num_layers, activation, num_outputs):
@@ -45,18 +45,17 @@ class DiscreteActor(SimpleMLP):
 
 class ContinuousActor(SimpleMLP):
     """Regular MLP for a policy which outputs a normal distribution on each action dimension."""
-    # the standard deviations have a seperate network, with 1 hidden layer and a offset hyperparameter.
-    def __init__(self, action_dim, num_hidden=64, num_layers=2, activation='tanh', std_offset=.5):
-        super().__init__(num_hidden, num_layers, activation, action_dim)
-        self.std_hidden = tf.keras.layers.Dense(num_hidden, activation=activation)
-        self.std_out = tf.keras.layers.Dense(action_dim)
+    # this assumes tanh clipping. If using hard [-1, 1] clipping, use ContinuousActorClipped
+    def __init__(self, action_dim, num_hidden=64, num_layers=2, activation='tanh', std_offset=0.69):
+        super().__init__(num_hidden, num_layers, activation, 2*action_dim)
         self.offset = tf.math.log(2.718**std_offset-1)
+        self.action_dim = action_dim
 
     def call(self, states):
         """Returns the mean and standard deviation for each action dimension."""
-        means = super().call(states)
-        stds = self.std_hidden(states)
-        stds = tf.math.softplus(self.std_out(stds)+self.offset)
+        out = super().call(states)
+        means, stds = out[:,:self.action_dim], out[:, self.action_dim:]
+        stds = tf.math.softplus(stds+self.offset)
         return means, stds
 
     def log_probs_and_sample(self, states):
@@ -71,16 +70,93 @@ class ContinuousActor(SimpleMLP):
         means, stds = self.call(states)
         z = tf.random.normal(tf.shape(means))
         actions = means+stds*z
-        log_probs = tf.math.log(1/stds/tf.math.sqrt(2*3.1415926535))-1/2*tf.math.square((actions-means)/stds)
-        return tf.math.reduce_sum(log_probs, axis=1, keepdims=True), tf.math.tanh(actions)
+        log_probs = -tf.math.log(stds)-1/2*tf.math.square((actions-means)/stds)
+        return tf.math.reduce_sum(log_probs, axis=1, keepdims=True), actions
 
     def log_probs_from_actions(self, states, actions):
         """Given a batch of state-action pairs, returns the associated log probabilities."""
         means, stds = self.call(states)
-        actions = tf.math.atanh(actions)
-        log_probs = tf.math.log(1/stds/tf.math.sqrt(2*3.1415926535))-1/2*tf.math.square((actions-means)/stds)
+        log_probs = -tf.math.log(stds)-1/2*tf.math.square((actions-means)/stds)
         return tf.math.reduce_sum(log_probs, axis=1, keepdims=True)
 
+
+def erf(z):
+    """Error function (https://en.wikipedia.org/wiki/Error_function#Numerical_approximations)."""
+    a1, a2, a3, a4 = 0.278393, 0.230389, 0.000972, 0.078108
+    signs = tf.math.sign(z)
+    z = tf.math.abs(z)
+    out = 1 - 1/(1 + a1*z + a2*z**2 + a3*z**3 + a4*z**4)**4
+    return signs*out
+
+class ContinuousActorClipped(SimpleMLP):
+    def __init__(self, action_dim, num_hidden=64, num_layers=2, activation='tanh', std_offset=0.69):
+        super().__init__(num_hidden, num_layers, activation, 2*action_dim)
+        self.offset = tf.math.log(2.718**std_offset-1)
+        self.action_dim = action_dim
+
+    def call(self, states):
+        """Returns the mean and standard deviation for each action dimension."""
+        out = super().call(states)
+        means, stds = out[:,:self.action_dim], out[:, self.action_dim:]
+        means = tf.math.tanh(means)
+        stds = tf.math.softplus(stds+self.offset)
+        return means, stds
+
+    def log_probs_and_sample(self, states):
+        """Given a batch of states, returns log probabilities and the sampled actions.
+
+        Args:
+            states: tf.float32 tensor with shape (n, state_dim) where n is the batch size.
+        Returns:
+            actions_probs: tf.float32 tensor with shape (n, 1). Log probability for each action
+            actions: tf.float32 tensor with shape (n, action_dim). Actions are transformed onto [-1, 1].
+        """
+        means, stds = self.call(states)
+        z = tf.random.normal(tf.shape(means))
+        actions = means+stds*z
+        log_probs = self.log_prob_helper(actions, means, stds)
+        return log_probs, actions
+
+    def log_probs_from_actions(self, states, actions):
+        """Given a batch of state-action pairs, returns the associated log probabilities."""
+        means, stds = self.call(states)
+        log_probs = self.log_prob_helper(actions, means, stds)
+        return log_probs
+
+    def log_prob_helper(self, actions, means, stds):
+        """Calculates log probabilities, where the actions are hard clipped onto [-1, 1]."""
+        shape = tf.shape(actions)
+        actions = tf.reshape(actions, (shape[0]*shape[1],))
+        means = tf.reshape(means, (shape[0]*shape[1],))
+        stds = tf.reshape(stds, (shape[0]*shape[1],))
+        inds = tf.range(shape[0]*shape[1], dtype=tf.int32)
+        bools = tf.math.logical_or(tf.math.greater(actions, 1), tf.math.less(actions, -1))
+        not_bools = tf.math.logical_not(bools)
+        pdf_actions = tf.boolean_mask(actions, not_bools)
+        pdf_means = tf.boolean_mask(means, not_bools)
+        pdf_stds = tf.boolean_mask(stds, not_bools)
+        cdf_means = tf.boolean_mask(means, bools)
+        cdf_stds = tf.boolean_mask(stds, bools)
+        cdf_actions = -tf.ones((tf.shape(bools)[0],),dtype=tf.float32)
+        pdf = -tf.math.log(pdf_stds)-1/2*tf.math.square((pdf_actions-pdf_means)/pdf_stds)
+        cdf = tf.math.log((1+erf((cdf_actions-cdf_means)/cdf_stds/1.41421356))/2)
+        log_probs = tf.concat([pdf, cdf], 0)
+        inds = tf.expand_dims(tf.concat([tf.boolean_mask(inds, not_bools), tf.boolean_mask(inds, bools)], 0), 1)
+        log_probs = tf.scatter_nd(inds, log_probs, (shape[0]*shape[1],))
+        log_probs = tf.math.reduce_sum(tf.reshape(log_probs, shape), axis=1, keepdims=True)
+        return log_probs
+# test log_prob_helper
+# make state_dependent_std -> std_network, we have seperate, together, 'None'/None
+# those three models have their own class, then we can decorate with either tanh or hard clipping.
+# other enhancements:
+# minimum std dev for all models. This is a keyword.
+# accept an anonymous function which is the activation for the means
+# other clean-ups:
+# rename clip_type -> action_clip, clip -> ppo_clip
+# put the LR definition part into train_setup.
+# clean up the tqdm reporting a bit. get rid of 0s from the reporting. Record iterates + make plot
+# also keep track of any new episodes that have finished and report their rewards.
+# testing/other
 
 class TimeAwareValue(SimpleMLP):
     """Regular MLP which learns a time-aware value function (https://arxiv.org/abs/1802.10031)."""
@@ -136,7 +212,8 @@ def normalize_value(value):
             return tf.cond(tf.math.equal(self.n, tf.cast(0., tf.float32)),
                            lambda: values, lambda: values*(self.M/self.n)**.5+self.mean)
 
-        def normalize_returns(self, returns):
+        def normalize_returns(self, returns):  # I think the issue here is we need a function that returns
+        # delta/n/M instead of updating them inside the function like this?
             """Update empirical mean/std and calculate normalized returns."""
             for i in tf.reshape(returns, [-1]):
                 self.n += 1

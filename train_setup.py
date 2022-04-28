@@ -2,34 +2,28 @@ from environment import TFEnv, make_tf_env_step
 from models import DiscreteActor, ContinuousActor, TimeAwareValue, RegularValue, normalize_value
 from ppo import PPO
 
-class LinearDecreaseLR:
-    """Learning rate starts at lr_max. It decreases after each ppo iteration, reaching lr_min for last ppo step."""
-    def __init__(self, lr_max, lr_min, total_transitions, n_envs, nepochs, nsteps, batch_size):
-        self.n_updates = total_transitions // (n_envs*nsteps)
-        self.mb_per_update = ((n_envs*nsteps)//batch_size)*nepochs
-        self.count = 0
-        self.lr_max = lr_max
-        self.lr_min = lr_min
-
-    def __call__(self):
-        self.count = self.count+1
-        update = self.count // self.mb_per_update
-        return self.lr_max - (self.lr_max-self.lr_min)*(update/(self.n_updates-1))
 
 def train_setup(policy_num_hidden, policy_num_layers, policy_activation, action_dim, continuous_actions, std_offset,
-                value_num_hidden, value_num_layers, value_activation, value_normalization, time_aware,
-                gamma, kappa, env_list, T, clip, global_clipnorm, policy_lr, value_lr, optimizer):
+                state_dependent, clip_type, value_num_hidden, value_num_layers, value_activation, value_normalization,
+                time_aware, gamma, kappa, env_list, T, clip, global_clipnorm, policy_lr, value_lr, optimizer):
     """Initialize all objects needed for training loop.
 
     Args:
         policy_num_hidden: number of neurons in each hidden layer of policy
         policy_num_layers: number of hidden layers in policy
         policy_activation: activation function used on all policy hidden layers
-        action_dim: dimension of the action space for the environment, or number of available actions
+        action_dim: in a continuous action space, the dimension of the action space. In a discrete action
+            space, the number of available actions.
         continuous_actions: bool, if True then policy predicts mean and std dev of normal distribution for
             each action dimension. if False, then policy outputs logits for each possible discrete action.
-        std_offset: if continuous_actions=True, the initial action distribution is scaled such that the
-            standard deviation on each dimension is approximately std_offset.
+        std_offset: float, if continuous_actions=True, the initial action distribution is scaled such that
+            the standard deviation on each dimension is approximately std_offset. A larger std_offset will
+            also result in larger standard deviations during training due to the scaling. No scaling
+            corresponds to a value of log(2) = 0.69.
+        state_dependent_std: bool, if True the continuous policy network outputs both means and standard
+            deviations. If False, the standard deviations have seperate parameters not part of the network.
+        clip_type: for continuous actions, the actions are mapped onto [-1, 1]. If clip_type='tanh', use
+            tanh to do this, or if clip_type='clip' we clip the actions onto [-1, 1].
         value_num_hidden: number of neurons in each hidden layer of value function
         value_num_layers: number of hidden layers in value function
         value_activation: activation function used on all value function hidden layers
@@ -78,3 +72,17 @@ def train_setup(policy_num_hidden, policy_num_layers, policy_activation, action_
     #make ppo algorithm
     ppo = PPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T, clip, continuous_actions)
     return ppo, cur_states
+
+class LinearDecreaseLR:
+    """Learning rate starts at lr_max. It decreases after each ppo iteration, reaching lr_min for last ppo step."""
+    def __init__(self, lr_max, lr_min, total_transitions, n_envs, nepochs, nsteps, batch_size):
+        self.n_updates = total_transitions // (n_envs*nsteps)
+        self.mb_per_update = ((n_envs*nsteps)//batch_size)*nepochs
+        self.count = 0
+        self.lr_max = lr_max
+        self.lr_min = lr_min
+
+    def __call__(self):
+        self.count = self.count+1
+        update = self.count // self.mb_per_update
+        return self.lr_max - (self.lr_max-self.lr_min)*(update/(self.n_updates-1))
