@@ -113,9 +113,9 @@ class LinearDecreaseLR:
         self.count = self.count+1
         return self.lr_max - (self.lr_max-self.lr_min)*max(update/(self.n_updates-1), 1)
 
-def plot_ep_rewards(ep_rewards_list, total_transitions, n_envs, nsteps):
+def plot_ep_rewards(ep_rewards_list, n_envs, nsteps):
     plt.figure(figsize=(14.22, 8))
-    n_updates = total_transitions//(n_envs*nsteps)
+    n_updates = len(ep_rewards_list)
     x = [(n_envs*nsteps)*i for i in range(1, n_updates+1)]
     y = np.array([np.mean(i) for i in ep_rewards_list])
     y_std = np.array([np.std(i) for i in ep_rewards_list])

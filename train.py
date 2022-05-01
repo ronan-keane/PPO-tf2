@@ -19,28 +19,28 @@ if __name__ == '__main__':
     policy_num_hidden = [500, 250, 100]
     policy_activation = 'relu'
     action_clip = 'clip'
-    means_activation = 1.5
+    means_activation = 1.1
     stdev_type = 'constant'
-    stdev_offset = 0.5
-    stdev_min = 1e-6
+    stdev_offset = 0.69
+    stdev_min = 1e-3
     value_num_hidden = [500, 250, 100]
     value_activation = 'relu'
     value_normalization = False
     value_type = 'time-aware'
-    gamma = 0.992
-    kappa = 0.95
+    gamma = 0.99
+    kappa = 0.9
     ppo_clip = 0.2
-    global_clipnorm = 1
+    global_clipnorm = None
     optimizer = tf.keras.optimizers.Adam
-    lr_max_policy = 6e-4  # policy learning rate on first iteration
-    lr_min_policy = 1e-5  # policy learning rate on last iteration
-    lr_max_value = 6e-4
-    lr_min_value = 1e-5
+    lr_max_policy = 4e-4  # policy learning rate on first iteration
+    lr_min_policy = 5e-5  # policy learning rate on last iteration
+    lr_max_value = 4e-4
+    lr_min_value = 5e-5
     nepochs = 10  # number of epochs to train each iteration
     nsteps = 1000  # each iteration samples nsteps transitions from each environment
     batch_size = 32  # mini-batch size for gradient updates
     ############ AMOUNT OF TRAINING #############
-    total_transitions = 6000000  # total number of sampled transitions, combined over all environments
+    total_transitions = 8000000  # total number of sampled transitions, combined over all environments
 
     # setup
     policy_lr = LinearDecreaseLR(lr_max_policy, lr_min_policy, total_transitions, n_envs, nepochs, nsteps, batch_size)
@@ -62,5 +62,5 @@ if __name__ == '__main__':
         pbar.set_postfix_str('Avg ep reward={:.0f}, Avg ep len={:.0f}, Explained var={:.2f}'.format(
             np.mean(ep_rewards), np.mean(ep_lens), np.mean(ev))+', New ep rewards: '+new_rewards)
 
-    plot_ep_rewards(ep_rewards_list, total_transitions, n_envs, nsteps)
+    plot_ep_rewards(ep_rewards_list, n_envs, nsteps)
 

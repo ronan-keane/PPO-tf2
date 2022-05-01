@@ -194,7 +194,7 @@ def add_clipping(policy, activation=None):
             cdf_stds = tf.boolean_mask(stds, bools)
             # probability calculations (use normal pdf if -1 <= action <= 1, otherwise use normal cdf)
             pdf = -tf.math.log(pdf_stds)-1/2*tf.math.square((pdf_actions-pdf_means)/pdf_stds)
-            cdf = tf.math.log(1-cdf_actions*erf((cdf_actions-cdf_means)/cdf_stds/1.41421356))
+            cdf = tf.math.log(1-tf.math.minimum(cdf_actions*erf((cdf_actions-cdf_means)/cdf_stds/1.41421356), 0.999999))
             # reshaping
             log_probs = tf.concat([pdf, cdf], 0)
             inds = tf.expand_dims(tf.concat([tf.boolean_mask(inds, not_bools), tf.boolean_mask(inds, bools)], 0), 1)
