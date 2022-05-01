@@ -23,11 +23,11 @@ if __name__ == '__main__':
     stdev_type = 'constant'
     stdev_offset = 0.5
     stdev_min = 1e-6
-    value_num_hidden = [200, 200]
-    value_activation = 'tanh'
+    value_num_hidden = [500, 250, 100]
+    value_activation = 'relu'
     value_normalization = False
     value_type = 'time-aware'
-    gamma = 0.99
+    gamma = 0.992
     kappa = 0.95
     ppo_clip = 0.2
     global_clipnorm = 1
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     n_updates = total_transitions // (n_envs*nsteps)
     ep_rewards_list = []
     pbar = tqdm.tqdm(range(n_updates))
-    pbar.set_description('Calculating first iteration'.format(0))
+    pbar.set_description('Calculating first iteration')
     for i in pbar:
         cur_states = ppo.step(cur_states, nepochs, nsteps, batch_size)
         ep_rewards, ep_lens, ev, new_rewards = ppo.env.return_statistics()
