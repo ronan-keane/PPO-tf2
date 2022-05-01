@@ -5,29 +5,39 @@ import tensorflow as tf
 
 class TFEnv:
     """Wrapper for a list of gym-like environments. Tracks some statistics and handles state normalization."""
-    def __init__(self, env_list, is_cont=False, clip_type='tanh', state_dim=None, mem=50, mem2=5):
-        """env_list: list of gym-like environments."""
+    def __init__(self, env_list, action_type, state_dim=None, mem=50, process_action=None, new_mem=5):
+        """
+        Args:
+            env_list: list of gym-like environments.
+            action_type: one of 'discrete', 'tanh', 'clip', corresponding to discrete actions, continuous
+                actions with tanh clipping, regular clipping, respectively.
+            state_dim: dimension of state. Inferred by default.
+            mem: how many past episodes to keep in running average of rewards/episode lengths.
+            process_action: optional callable which takes as input the actions from policy, index. returns
+                the action to send to the environment.
+        """
         self.env_list = env_list
         self.state_dim = len(env_list[0].reset()) if state_dim is None else state_dim
-        if not is_cont:
+        if process_action is not None:
+            self.process_action = process_action
+        elif action_type == 'discrete':
             self.process_action = lambda actions, count: actions[count, 0]
-        elif clip_type=='tanh':
+        elif action_type == 'tanh':
             self.process_action = lambda actions, count: np.tanh(actions[count])
-        elif clip_type=='clip':
+        elif action_type == 'clip':
             self.process_action = lambda actions, count: np.clip(actions[count], -1, 1)
-        else:
-            self.process_action = clip_type
 
         # keep track of the following metrics
-        self.cum_rewards = [0. for i in range(len(env_list))]  # cumulative reward for each environment (no discounting)
-        self.recent_rewards = [0. for i in range(mem)]  # 50 most recent cumulative rewards (no discounting)
-        self.num_steps = np.array([0. for i in range(len(env_list))], dtype=np.float32)  # number of steps in each environment
-        self.ep_lens = [0. for i in range(mem)] # 50 most recent episode lengths
-        self.mem = mem  # memory length for recent rewards/ep_lens
+        self.cur_rewards = [0. for i in range(len(env_list))]  # current cumulative reward for each environment (no discounting)
+        self.rewards = np.array([0. for i in range(mem)])  # most recent episodic rewards (no discounting)
+        self.num_steps = np.array([0. for i in range(len(env_list))], dtype=np.float32)  # current number of steps in each environment
+        self.ep_lens = np.array([0. for i in range(mem)])  # most recent episode lengths
+        self.new_rewards = []  # cumulative rewards from episodes finished this ppo iteration
+        self.EVs = None  # explained variances, updated in ppo.step
+        self.mem = mem  # memory length for rewards/ep_lens
         self.mem_count = 0
-        self.EVs = [0. for i in range(mem2)]  # each entry is a numpy list of explained variances for that ppo step
-        self.mem2 = mem2
-        self.mem2_count = 0
+        self.new_mem = new_mem  # how many new rewards from this iteration to report seperately
+
 
         # state normalization parameters
         self.n = 0.
@@ -51,14 +61,15 @@ class TFEnv:
         for count, env in enumerate(self.env_list):
             action = self.process_action(batch_actions, count)
             state, reward, done, _ = env.step(action)
-            self.cum_rewards[count] += reward
+            self.cur_rewards[count] += reward
             self.num_steps[count] += 1
 
             if done == 1:
                 state = env.reset()
-                self.recent_rewards[self.mem_count] = self.cum_rewards[count]
+                self.new_rewards.append(self.cur_rewards[count])
+                self.rewards[self.mem_count] = self.cur_rewards[count]
                 self.ep_lens[self.mem_count] = self.num_steps[count]
-                self.cum_rewards[count] = 0.
+                self.cur_rewards[count] = 0.
                 self.num_steps[count] = 0.
                 self.mem_count = (self.mem_count+1)%self.mem
 
@@ -80,6 +91,23 @@ class TFEnv:
             delta2 = states[i] - self.means[0]
             self.M[0] += delta*delta2
         return (states - self.means)/np.maximum((self.M/self.n),1e-4)**.5
+
+    def return_statistics(self):
+        """Statistics to track and report during training.
+        Returns:
+            np.array of up to self.mem most recent cumulative episode rewards
+            np.array of up to self.mem most recent episode lengths
+            np.array of explained variance from each epoch of ppo from most recent iteration
+            str of up to self.new_mem new cumulative episode rewards from most recent iteration
+        """
+        new_rewards = self.new_rewards[-self.new_mem:]
+        self.new_rewards = []
+        out = ''
+        for count, i in enumerate(new_rewards):
+            if count>0:
+                out = out+', '
+            out = out+'{:.0f}'.format(i)
+        return self.rewards[self.rewards!=0.], self.ep_lens[self.ep_lens!=0.], self.EVs, out
 
     def reset(self):
         """Resets all environments and returns initial states."""

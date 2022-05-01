@@ -18,14 +18,13 @@ class PPO:
         self.clip = clip
         self.is_cont = continuous_actions
 
-    def step(self, cur_states, nepochs, nsteps, batch_size, clip):
+    def step(self, cur_states, nepochs, nsteps, batch_size):
         """Generates nsteps of experience and does PPO update for nepochs."""
         cur_states, EVs = ppo_step(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
             self.tf_env_step, nepochs, nsteps, batch_size, cur_states, self.gamma, self.kappa, self.T,
             self.clip, self.is_cont)
 
-        self.env.EVs[self.env.mem2_count] = EVs.numpy()
-        self.env.mem2_count = (self.env.mem2_count+1)%self.env.mem2
+        self.env.EVs = EVs.numpy()
         return cur_states
 
 def make_training_data(cur_states, tf_env_step, nsteps, policy, is_cont):
