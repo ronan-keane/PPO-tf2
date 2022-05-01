@@ -145,7 +145,7 @@ def compute_returns_advantages(value, states, rewards, dones, times, cur_states,
         returns = returns.write(ind, cur_returns)
 
     returns = tf.transpose(returns.stack(), perm=[1,0])
-    normal_returns = value.normalize_returns(returns)
+    normal_returns, value.n, value.mean, value.M = value.normalize_returns(returns, value.n, value.mean, value.M)
     advs = returns - values
     EV = tf.math.reduce_std(advs)**2/tf.math.reduce_std(values)**2
     return normal_returns, advs, 1-EV

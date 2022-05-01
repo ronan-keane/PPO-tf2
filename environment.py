@@ -41,8 +41,8 @@ class TFEnv:
 
         # state normalization parameters
         self.n = 0.
-        self.means = np.array([[0 for i in range(state_dim)]], dtype=np.float32)
-        self.M = np.array([[0 for i in range(state_dim)]], dtype=np.float32)
+        self.means = np.array([[0 for i in range(self.state_dim)]], dtype=np.float32)
+        self.M = np.array([[0 for i in range(self.state_dim)]], dtype=np.float32)
 
     def step(self, batch_actions):
         """Does a single step for each environment. Needs to be wrapped in tf_env_step.
