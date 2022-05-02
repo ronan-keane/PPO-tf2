@@ -4,8 +4,16 @@ import gym
 from train_setup import train_setup, LinearDecreaseLR
 import nni
 
-
 if __name__ == '__main__':
+    try:
+        # Disable all GPUS
+        tf.config.set_visible_devices([], 'GPU')
+        visible_devices = tf.config.get_visible_devices()
+        for device in visible_devices:
+            assert device.device_type != 'GPU'
+    except:
+        # Invalid device or cannot modify virtual devices once initialized.
+        pass
     ############ ENVIRONMENT ###################
     n_envs = 4
     env_list = [gym.make('BipedalWalker-v3') for i in range(n_envs)]
@@ -40,6 +48,7 @@ if __name__ == '__main__':
     ############ AMOUNT OF TRAINING #############
     total_transitions = 4000000  # total number of sampled transitions, combined over all environments
     reward_threshold = 300  # stop training if last env.mem episodes are above this threshold
+    
 
     # setup
     policy_lr = LinearDecreaseLR(lr_max_policy, lr_min_policy, total_transitions, n_envs, nepochs, nsteps, batch_size)

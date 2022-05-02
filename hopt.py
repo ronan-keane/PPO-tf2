@@ -18,14 +18,14 @@ experiment.config.trial_command = 'python hopt_eval.py'
 experiment.config.trial_code_directory = '.'
 experiment.config.search_space = search_space
 experiment.config.tuner.name = 'TPE'
-experiment.config.tunder.class_args['optimize_mode'] = 'maximize'
+experiment.config.tuner.class_args['optimize_mode'] = 'maximize'
 experiment.config.assessor.name = 'Medianstop'
 experiment.config.tuner.class_args= {'optimize_mode':'maximize', 'start_step':500}
 
 experiment.config.max_trial_number = 100
 experiment.config.trial_concurrency = 1
 experiment.config.max_experiment_duration = '24h'
-experiment.config.use_active_gpu=False
+
 
 
 # You can use the web portal to view experiment status: http://localhost:8080.
