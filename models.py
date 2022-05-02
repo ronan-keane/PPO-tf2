@@ -227,7 +227,7 @@ class TimeAwareValue(SimpleMLP):
     def unnormalize_values(self, values):
         return values
 
-    def normalize_returns(self, returns, *args):
+    def normalize_returns(self, returns):
         return returns
 
 class TimeAwareValue2(SimpleMLP):
@@ -236,13 +236,14 @@ class TimeAwareValue2(SimpleMLP):
         super().__init__(num_hidden, activation, 1)
 
     def get_values(self, states, times, *args):
+        times = tf.expand_dims(times, 1)
         values = self.call(tf.concat([states, times], axis=1))
         return values[:,0]
 
     def unnormalize_values(self, values):
         return values
 
-    def normalize_returns(self, returns, *args):
+    def normalize_returns(self, returns):
         return returns
 
 class RegularValue(SimpleMLP):
@@ -256,7 +257,7 @@ class RegularValue(SimpleMLP):
     def unnormalize_values(self, values):
         return values
 
-    def normalize_returns(self, returns, *args):
+    def normalize_returns(self, returns):
         return returns
 
 
@@ -275,7 +276,7 @@ def normalize_value(value):
             else:
                 return values*(self.M/self.n)**.5+self.mean
 
-        def normalize_returns(self, returns, n, mean, M):
+        def normalize_returns(self, returns):
             """Update empirical mean/std and calculate normalized returns."""
             for i in tf.reshape(returns, [-1]):
                 self.n.assign_add(1.)
