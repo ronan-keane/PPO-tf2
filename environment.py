@@ -110,7 +110,7 @@ class TFEnv:
         return self.rewards[self.rewards!=0.], self.ep_lens[self.ep_lens!=0.], self.EVs, out
 
     def reset(self):
-        """Resets all environments and returns initial states."""
+        """For initialization purposes, resets all environments and returns initial states."""
         init_states = [env.reset() for env in self.env_list]
         init_states = np.stack(init_states, axis=0)
         return tf.convert_to_tensor(init_states, dtype=tf.float32)

@@ -209,7 +209,6 @@ class TimeAwareValue(SimpleMLP):
     """Regular MLP which learns a time-aware value function (https://arxiv.org/abs/1802.10031)."""
     def __init__(self, num_hidden, activation='tanh'):
         super().__init__(num_hidden, activation, 2)
-        self.n, self.mean, self.M = None, None, None
 
     def get_values(self, states, times, gamma, T):
         """Given a batch of states, returns the value function estimates.
@@ -229,39 +228,27 @@ class TimeAwareValue(SimpleMLP):
         return values
 
     def normalize_returns(self, returns, *args):
-        return returns, None, None, None
+        return returns
 
 class TimeAwareValue2(SimpleMLP):
-    """Time-aware value function with seperate networks for offset and reward rate."""
+    """Regular MLP which takes in time as well as the state."""
     def __init__(self, num_hidden, activation='tanh'):
         super().__init__(num_hidden, activation, 1)
-        self.offset_layers = [tf.keras.layers.Dense(i, activation=activation) for i in num_hidden]
-        self.offset_out = tf.keras.layers.Dense(1)
-        self.n, self.mean, self.M = None, None, None
 
-    def call(self, states):
-        values = super().call(states)[:,0]
-        offsets = states
-        for layer in self.offset_layers:
-            offsets = layer(offsets)
-        offsets = self.offset_out(offsets)[:,0]
-        return values, offsets
-
-    def get_values(self, states, times, gamma, T):
-        values, offsets = self.call(states)
-        return values*(1 - tf.math.pow(gamma, T-times+1))/(1-gamma)+offsets
+    def get_values(self, states, times, *args):
+        values = self.call(tf.concat([states, times], axis=1))
+        return values[:,0]
 
     def unnormalize_values(self, values):
         return values
 
     def normalize_returns(self, returns, *args):
-        return returns, None, None, None
+        return returns
 
 class RegularValue(SimpleMLP):
     """Regular MLP which learns a regular value function."""
     def __init__(self, num_hidden, activation='tanh'):
         super().__init__(num_hidden, activation, 1)
-        self.n, self.mean, self.M = None, None, None
 
     def get_values(self, states, *args):
         return self.call(states)[:,0]
@@ -270,36 +257,32 @@ class RegularValue(SimpleMLP):
         return values
 
     def normalize_returns(self, returns, *args):
-        return returns, None, None, None
+        return returns
 
-
-def update_running_mean_std(data, n, mean, M):
-    for i in data:
-        n = n+1
-        delta = i-mean
-        mean = mean+delta/n
-        delta2 = i-mean
-        M = M+delta*delta2
-    return n, mean, M
 
 def normalize_value(value):
     """Decorates value function approximator by adding normalization."""
     class NormalizedValue(value):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
-            self.n = tf.cast(0., tf.float32)
-            self.mean = tf.cast(0., tf.float32)
-            self.M = tf.cast(0., tf.float32)
+            self.n = tf.Variable(tf.cast(0., tf.float32), False, True)
+            self.mean = tf.Variable(tf.cast(0., tf.float32), False, True)
+            self.M = tf.Variable(tf.cast(0., tf.float32), False, True)
 
         def unnormalize_values(self, values):
-            if self.n==0:
+            if self.n==0.:
                 return values
             else:
                 return values*(self.M/self.n)**.5+self.mean
 
         def normalize_returns(self, returns, n, mean, M):
             """Update empirical mean/std and calculate normalized returns."""
-            n, mean, M = update_running_mean_std(tf.reshape(returns, [-1]), n, mean, M)
-            return (returns - mean)/(M/n)**.5, n, mean, M
+            for i in tf.reshape(returns, [-1]):
+                self.n.assign_add(1.)
+                delta = i-self.mean
+                self.mean.assign_add(delta/self.n)
+                delta2 = i-self.mean
+                self.M.assign_add(delta*delta2)
+            return (returns - self.mean)/(self.M/self.n)**.5
 
     return NormalizedValue
