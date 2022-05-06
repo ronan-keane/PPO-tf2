@@ -39,6 +39,10 @@ if __name__ == '__main__':
     nepochs = 10  # number of epochs to train each iteration
     nsteps = 1000  # each iteration samples nsteps transitions from each environment
     batch_size = 32  # mini-batch size for gradient updates
+    ############ OPTIMAL BASELINES ##############
+    baseline_type = 'pp'
+    pp_args = ([10, 11, 12, 13], 1e-3)
+    lr_max_baseline = 1e-4
     ############ AMOUNT OF TRAINING #############
     total_transitions = 4000000  # total number of sampled transitions, combined over all environments
     reward_threshold = 300  # stop training if last env.mem episodes are above this threshold
@@ -46,10 +50,12 @@ if __name__ == '__main__':
     # setup
     policy_lr = LinearDecreaseLR(lr_max_policy, lr_min_policy, total_transitions, n_envs, nepochs, nsteps, batch_size)
     value_lr = LinearDecreaseLR(lr_max_value, lr_min_value, total_transitions, n_envs, nepochs, nsteps, batch_size)
+    baseline_lr = LinearDecreaseLR(lr_max_baseline, lr_max_baseline, total_transitions, n_envs, nepochs, nsteps, batch_size)
     ppo, cur_states = train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_num_hidden,
                 policy_activation, action_clip, means_activation, stdev_type, stdev_offset, stdev_min,
                 value_num_hidden, value_activation, value_normalization, value_type,
-                gamma, kappa, ppo_clip, global_clipnorm, optimizer, policy_lr, value_lr)
+                gamma, kappa, ppo_clip, global_clipnorm, optimizer, policy_lr, value_lr,
+                baseline_type, pp_args, baseline_lr)
     # training loop and reporting
     n_updates = total_transitions // (n_envs*nsteps)
     ep_rewards_list = []

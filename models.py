@@ -335,7 +335,7 @@ class PerParameterBaseline:
     """A per-parameter baseline which is constant over all states."""
     def __init__(self, trainable_variables, lr):
         m = 0
-        for i in enumerate(trainable_variables):
+        for i in trainable_variables:
             m += tf.math.reduce_prod(tf.shape(i))
         self.m = m
         self.baseline = tf.Variable(tf.zeros((2*m,)), False, True)  # shape is (2*grad,)
@@ -368,10 +368,10 @@ class KPerParameterBaseline:
     def __init__(self, trainable_variables, inds, lr):
         assert len(inds) > 0
         m = 0
-        for i in enumerate(trainable_variables):
+        for i in trainable_variables:
             m += tf.math.reduce_prod(tf.shape(i))
         self.m = m
-        self.baseline = tf.Variable(tf.zeros((2**len(inds), 2*m)), False, True)
+        self.baseline = tf.Variable(tf.zeros((2**len(inds), 2*m))+0.1, False, True)
         self.lr = tf.cast(lr, tf.float32)
         self.inds = inds
 

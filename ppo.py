@@ -206,11 +206,11 @@ def get_log_probs_and_gradients(policy, states, actions):
     new_log_probs = tf.TensorArray(tf.float32, size=n, dynamic_size=False)
     log_grads = tf.TensorArray(tf.float32, size=n, dynamic_size=False)
     for i in tf.range(n):
-        cur_state, cur_action = tf.expand_dims(states[i], 1), tf.expand_dims(actions[i], 1)
+        cur_state, cur_action = tf.expand_dims(states[i], 0), tf.expand_dims(actions[i], 0)
         with tf.GradientTape() as g:
             cur_log_prob = policy.log_probs_from_actions(cur_state, cur_action)
         cur_grad = flatten_grad(g.gradient(cur_log_prob, policy.trainable_variables))
-        new_log_probs = new_log_probs.write(i, cur_log_prob)
+        new_log_probs = new_log_probs.write(i, cur_log_prob[0])
         log_grads = log_grads.write(i, cur_grad)
     # shapes of (n, 1) and (n, grad)
     return new_log_probs.stack(), log_grads.stack()
