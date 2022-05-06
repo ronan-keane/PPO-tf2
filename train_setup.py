@@ -1,6 +1,7 @@
 from environment import TFEnv, make_tf_env_step
 from models import DiscreteActor, MeanStdNetwork, MeanNetworkAndStdNetwork, MeanNetworkAndStd,\
-    add_tanh_clipping, add_clipping, TimeAwareValue, TimeAwareValue2, RegularValue, normalize_value
+    add_tanh_clipping, add_clipping, TimeAwareValue, TimeAwareValue2, RegularValue, normalize_value,\
+    OptimalBaseline, RegularBaseline, PerParameterBaseline, KPerParamterBaseline
 from ppo import PPO
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,7 +11,8 @@ import tensorflow as tf
 def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_num_hidden,
                 policy_activation, action_clip, means_activation, stdev_type, stdev_offset, stdev_min,
                 value_num_hidden, value_activation, value_normalization, value_type,
-                gamma, kappa, ppo_clip, global_clipnorm, optimizer, policy_lr, value_lr):
+                gamma, kappa, ppo_clip, global_clipnorm, optimizer, policy_lr, value_lr,
+                baseline_type, args, baseline_lr):
     """Initialize all objects needed for training loop.
 
     Args:
@@ -50,6 +52,12 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
         optimizer: tf.keras.optimizers to instantiate for both policy and value function.
         policy_lr: float, callable that returns learning rate, or tf LearningRateSchedule. For policy.
         value_lr: float, callable that returns learning rate, or tf LearningRateSchedule. For value function.
+        baseline_type: None or one of 'optimal', 'baseline', 'pp, or 'both'. If None, regular PPO. If
+            'optimal', add optimal per-parameter baseline. If 'pp', add per-parameter optimal baseline.
+            If 'both', add both optimal and per-parameter baseline.
+        args: If 'optimal' or 'pp', any *args for the initialization of the baselines. If 'both', tuple
+            of *args for the optimal, and pp baselines, respectively.
+        baseline_lr: if baseline_type is 'optimal' or 'both', lr argument to pass to baseline optimizer.
     Returns:
         ppo: PPO class, whose step method implements an iteration of PPO.
     """
@@ -90,7 +98,7 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
     value_options = {'regular':RegularValue, 'time-aware':TimeAwareValue, 'time-aware-2':TimeAwareValue2}
     value = value_options[value_type]
     value = value if not value_normalization else normalize_value(value)
-    value = value(value_num_hidden, value_activation)  
+    value = value(value_num_hidden, value_activation)
     value.get_values(cur_states, cur_times, gamma, T)  # initialize weights
     # make optimizers
     policy_optimizer = optimizer(learning_rate=policy_lr, global_clipnorm=global_clipnorm)
