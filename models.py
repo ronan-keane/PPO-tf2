@@ -313,7 +313,7 @@ class OptimalBaseline(SimpleMLP):
         return stdev*baselines + mean
 
     def normalize(self, targets):
-        n = tf.shape(targets)[0]
+        n = tf.cast(tf.shape(targets)[0], tf.float32)
         self.n.assign_add(n)
         self.s1.assign_add(tf.math.reduce_sum(targets, axis=0, keepdims=True))
         self.s2.assign_add(tf.math.reduce_sum(tf.math.square(targets), axis=0, keepdims=True))
@@ -338,7 +338,7 @@ class PerParameterBaseline:
         for i in trainable_variables:
             m += tf.math.reduce_prod(tf.shape(i))
         self.m = m
-        self.baseline = tf.Variable(tf.zeros((2*m,)), False, True)  # shape is (2*grad,)
+        self.baseline = tf.Variable(tf.zeros((2*m,))+0.1, False, True)  # shape is (2*grad,)
         self.lr = tf.cast(lr, tf.float32)
 
     def get_baseline(self, states):
@@ -356,7 +356,7 @@ class PerParameterBaseline:
 
     def update(self, targets, xi):
         """Gradient update."""
-        n = tf.shape(targets)[0]
+        n = tf.cast(tf.shape(targets)[0], tf.float32)
         grad = 2*(tf.math.reduce_sum(targets, axis=0)-n*self.baseline)
         self.baseline.assign_add(self.lr*grad)
 
@@ -393,6 +393,6 @@ class KPerParameterBaseline:
 
     def update(self, targets, xi):
         """Gradient update."""
-        grad = 2*(targets - tf.gather(self.baseline, xi, axis=0))
+        grad = self.lr*2*(targets - tf.gather(self.baseline, xi, axis=0))
         self.baseline.scatter_nd_add(tf.expand_dims(xi, axis=1), grad)
 
