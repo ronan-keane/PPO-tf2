@@ -34,6 +34,7 @@ class TFEnv:
         self.ep_lens = np.array([0. for i in range(mem)])  # most recent episode lengths
         self.new_rewards = []  # cumulative rewards from episodes finished this ppo iteration
         self.EVs = None  # explained variances, updated in ppo.step
+        self.Var = None  # policy gradient variance, updated in ppo.step
         self.mem = mem  # memory length for rewards/ep_lens
         self.mem_count = 0
         self.new_mem = new_mem  # how many new rewards from this iteration to report seperately

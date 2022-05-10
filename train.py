@@ -16,19 +16,19 @@ if __name__ == '__main__':
     T = 1600
     env_kwargs = {}
     ############ HYPERPARAMETERS ###############
-    policy_num_hidden = [500, 250, 100]
+    policy_num_hidden = [200, 100, 50]
     policy_activation = 'relu'
     action_clip = 'tanh'
     means_activation = None
     stdev_type = 'constant'
     stdev_offset = 0.69
     stdev_min = 1e-2
-    value_num_hidden = [500, 250, 100]
+    value_num_hidden = [200, 100, 50]
     value_activation = 'relu'
     value_normalization = False
     value_type = 'time-aware'
     gamma = 0.992
-    kappa = 0.5
+    kappa = 0.95
     ppo_clip = 0.2
     global_clipnorm = None
     optimizer = tf.keras.optimizers.Adam
@@ -41,10 +41,10 @@ if __name__ == '__main__':
     batch_size = 32  # mini-batch size for gradient updates
     ############ OPTIMAL BASELINES ##############
     baseline_type = 'both'
-    pp_args = ([10, 11, 12, 13], 1e-4,)
+    pp_args = (1e-4,)
     lr_max_baseline = 1e-4
     ############ AMOUNT OF TRAINING #############
-    total_transitions = 4000000  # total number of sampled transitions, combined over all environments
+    total_transitions = 1000000  # total number of sampled transitions, combined over all environments
     reward_threshold = 300  # stop training if last env.mem episodes are above this threshold
 
     # setup

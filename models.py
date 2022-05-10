@@ -338,7 +338,7 @@ class PerParameterBaseline:
         for i in trainable_variables:
             m += tf.math.reduce_prod(tf.shape(i))
         self.m = m
-        self.baseline = tf.Variable(tf.zeros((2*m,))+0.1, False, True)  # shape is (2*grad,)
+        self.baseline = tf.Variable(tf.concat([tf.zeros((m,)), 1e-6*tf.ones((m,))], axis=0), False, True)  # shape is (2*grad,)
         self.lr = tf.cast(lr, tf.float32)
 
     def get_baseline(self, states):
@@ -361,38 +361,38 @@ class PerParameterBaseline:
         self.baseline.assign_add(self.lr*grad)
 
 
-class KPerParameterBaseline:
-    """Estimates K different per-parameter constant baselines."""
-    # inds is a list of ints. For each entry, \xi encodes whether that state dimension index is > 0 or < 0.
-    # So there are 2**len(inds) total baselines, with a maximum number of 2**state_dim constant baselines.
-    def __init__(self, trainable_variables, inds, lr):
-        assert len(inds) > 0
-        m = 0
-        for i in trainable_variables:
-            m += tf.math.reduce_prod(tf.shape(i))
-        self.m = m
-        self.baseline = tf.Variable(tf.zeros((2**len(inds), 2*m))+0.1, False, True)
-        self.lr = tf.cast(lr, tf.float32)
-        self.inds = inds
+# class KPerParameterBaseline:
+#     """Estimates K different per-parameter constant baselines."""
+#     # inds is a list of ints. For each entry, \xi encodes whether that state dimension index is > 0 or < 0.
+#     # So there are 2**len(inds) total baselines, with a maximum number of 2**state_dim constant baselines.
+#     def __init__(self, trainable_variables, inds, lr):
+#         assert len(inds) > 0
+#         m = 0
+#         for i in trainable_variables:
+#             m += tf.math.reduce_prod(tf.shape(i))
+#         self.m = m
+#         self.baseline = tf.Variable(tf.zeros((2**len(inds), 2*m))+0.1, False, True)
+#         self.lr = tf.cast(lr, tf.float32)
+#         self.inds = inds
 
-    def get_baseline(self, states):
-        """Given batch of states, returns corresponding baselines and also xi (indices for each baseline).
+#     def get_baseline(self, states):
+#         """Given batch of states, returns corresponding baselines and also xi (indices for each baseline).
 
-        Args:
-            states: tf.float32 tensor of shape (batch_size, state_dim)
-        Returns:
-            tf.float32 tensor of shape (batch_size, grad_dim) giving the per-parameter baselines
-            xi: tf.int32 tensor of shape (batch_size,) giving the index of which per-parameter baseline was used
-        """
-        xi = tf.gather(states, self.inds, axis=1)
-        xi = tf.cast(tf.math.greater(xi, 0), tf.int32)
-        xi = tf.math.reduce_sum(xi*2**tf.range(tf.shape(xi)[1], dtype=tf.int32), axis=1)  # shape is (batch_size,)
-        baselines = tf.gather(self.baseline, xi, axis=0)
-        baselines = baselines[:,:self.m]/baselines[:,self.m:]  # shape is (batch_size, grad)
-        return baselines, xi
+#         Args:
+#             states: tf.float32 tensor of shape (batch_size, state_dim)
+#         Returns:
+#             tf.float32 tensor of shape (batch_size, grad_dim) giving the per-parameter baselines
+#             xi: tf.int32 tensor of shape (batch_size,) giving the index of which per-parameter baseline was used
+#         """
+#         xi = tf.gather(states, self.inds, axis=1)
+#         xi = tf.cast(tf.math.greater(xi, 0), tf.int32)
+#         xi = tf.math.reduce_sum(xi*2**tf.range(tf.shape(xi)[1], dtype=tf.int32), axis=1)  # shape is (batch_size,)
+#         baselines = tf.gather(self.baseline, xi, axis=0)
+#         baselines = baselines[:,:self.m]/baselines[:,self.m:]  # shape is (batch_size, grad)
+#         return baselines, xi
 
-    def update(self, targets, xi):
-        """Gradient update."""
-        grad = self.lr*2*(targets - tf.gather(self.baseline, xi, axis=0))
-        self.baseline.scatter_nd_add(tf.expand_dims(xi, axis=1), grad)
+#     def update(self, targets, xi):
+#         """Gradient update."""
+#         grad = self.lr*2*(targets - tf.gather(self.baseline, xi, axis=0))
+#         self.baseline.scatter_nd_add(tf.expand_dims(xi, axis=1), grad)
 
