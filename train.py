@@ -40,7 +40,7 @@ if __name__ == '__main__':
     nsteps = 1000  # each iteration samples nsteps transitions from each environment
     batch_size = 32  # mini-batch size for gradient updates
     ############ OPTIMAL BASELINES ##############
-    baseline_type = 'both'
+    baseline_type = None
     pp_args = (1e-4,)
     lr_max_baseline = 1e-4
     ############ AMOUNT OF TRAINING #############
@@ -59,17 +59,19 @@ if __name__ == '__main__':
     # training loop and reporting
     n_updates = total_transitions // (n_envs*nsteps)
     ep_rewards_list = []
+    vars_list = []
     pbar = tqdm.tqdm(range(n_updates))
     pbar.set_description('Calculating first iteration')
     for i in pbar:
         cur_states = ppo.step(cur_states, nepochs, nsteps, batch_size)
-        ep_rewards, ep_lens, ev, new_rewards = ppo.env.return_statistics()
+        ep_rewards, ep_lens, ev, Vars, new_rewards = ppo.env.return_statistics()
         ep_rewards_list.append(ep_rewards)
+        vars_list.append(Vars)
         pbar.set_description('Iteration {:.0f}'.format(i+1))
-        pbar.set_postfix_str('Avg ep reward={:.0f}, Avg ep len={:.0f}, Explained var={:.2f}'.format(
-            np.mean(ep_rewards), np.mean(ep_lens), np.mean(ev))+', New ep rewards: '+new_rewards)
+        pbar.set_postfix_str('Avg ep reward={:.0f}, Avg ep len={:.0f}, Explained var={:.2f}, Variance={:.2g}'.format(
+            np.mean(ep_rewards), np.mean(ep_lens), np.mean(ev), np.mean(Vars))+', New ep rewards: '+new_rewards)
         if np.mean(ep_rewards) > reward_threshold:
             break
 
-    plot_ep_rewards(ep_rewards_list, n_envs, nsteps)
+    plot_ep_rewards(ep_rewards_list, vars_list, n_envs, nsteps)
 

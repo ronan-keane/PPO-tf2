@@ -20,12 +20,12 @@ class PPO:
 
     def step(self, cur_states, nepochs, nsteps, batch_size):
         """Generates nsteps of experience and does PPO update for nepochs."""
-        cur_states, EVs, Var = ppo_step(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
+        cur_states, EVs, Vars = ppo_step(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
             self.tf_env_step, nepochs, nsteps, batch_size, cur_states, self.gamma, self.kappa, self.T,
             self.clip, self.is_cont)
 
         self.env.EVs = EVs.numpy()
-        self.env.Var = Var.numpy()
+        self.env.Vars = Vars.numpy()
         return cur_states
 
 def make_training_data(cur_states, tf_env_step, nsteps, policy, is_cont):
@@ -98,9 +98,12 @@ def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepo
     times = tf.reshape(times, [n_transitions])
 
     EVs = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
-    s1 = tf.zeros((1,))
-    s2 = tf.zeros((1,))
-    n = nepochs*(n_transitions // batch_size)
+    Vars = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
+    n = tf.cast((n_transitions // batch_size), tf.float32)
+    m = tf.cast(0, tf.int32)
+    for i in policy.trainable_variables:
+        m = m + tf.math.reduce_prod(tf.shape(i))
+
     for i in tf.range(nepochs):
         # advantages and returns are recomputed once per epoch
         returns, advantages, EV = compute_returns_advantages(
@@ -108,6 +111,9 @@ def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepo
         returns = tf.reshape(returns, [n_transitions])
         advantages = tf.reshape(advantages, [n_transitions])
         EVs = EVs.write(i, EV)  # explained variance
+        # s1 and s2 are running sum and sum^2, used to track variance during training
+        s1 = tf.zeros((m,))
+        s2 = tf.zeros((m,))
 
         # make mini-batches. the mini-batches all have batch_size as their first dimension.
         inds = tf.random.shuffle(tf.range(n_transitions))
@@ -117,12 +123,14 @@ def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepo
                 tf.gather(states, ind), tf.gather(actions, ind), tf.gather(action_log_probs, ind), \
                 tf.gather(times, ind), tf.gather(returns, ind), tf.gather(advantages, ind)
 
+            # gradient updates
             s1, s2 = mb_step(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
                     mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, s1, s2)
-            
-    Var = tf.math.reduce_sum(1/n*(s2 - s1**2/n))
 
-    return cur_states, EVs.stack(), Var
+        Var = tf.math.reduce_sum(1/n*(s2 - s1**2/n))
+        Vars = Vars.write(i, Var)
+
+    return cur_states, EVs.stack(), Vars.stack()
 
 @tf.function
 def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepochs, nsteps, batch_size,
@@ -163,9 +171,12 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
     times = tf.reshape(times, [n_transitions])
 
     EVs = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
-    s1 = tf.zeros((1,))
-    s2 = tf.zeros((1,))
-    n = nepochs*(n_transitions // batch_size)
+    Vars = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
+    n = tf.cast((n_transitions // batch_size), tf.float32)
+    m = tf.cast(0, tf.int32)
+    for i in policy.trainable_variables:
+        m = m + tf.math.reduce_prod(tf.shape(i))
+
     for i in tf.range(nepochs):
         # advantages and returns are recomputed once per epoch
         returns, advantages, EV = compute_returns_advantages(
@@ -173,6 +184,9 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
         returns = tf.reshape(returns, [n_transitions])
         advantages = tf.reshape(advantages, [n_transitions])
         EVs = EVs.write(i, EV)  # explained variance
+        # s1 and s2 are running sum and sum^2, used to track variance during training
+        s1 = tf.zeros((m,))
+        s2 = tf.zeros((m,))
 
         # make mini-batches. the mini-batches all have batch_size as their first dimension.
         inds = tf.random.shuffle(tf.range(n_transitions))
@@ -182,12 +196,14 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
                 tf.gather(states, ind), tf.gather(actions, ind), tf.gather(action_log_probs, ind), \
                 tf.gather(times, ind), tf.gather(returns, ind), tf.gather(advantages, ind)
 
+            # gradient updates
             s1, s2 = mb_step(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
                     mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, s1, s2)
-            
-    Var = tf.math.reduce_sum(1/n*(s2 - s1**2/n))
 
-    return cur_states, EVs.stack(), Var
+        Var = tf.math.reduce_sum(1/n*(s2 - s1**2/n))
+        Vars = Vars.write(i, Var)
+
+    return cur_states, EVs.stack(), Vars.stack()
 
 # make seperate PPO class for optimal baselines which uses ppo_step_optimal (worry only about 'both' case)
 # helper function to get baselines only once per epoch
@@ -324,8 +340,8 @@ def mb_step_optimal_pp(policy, value, states, actions, action_log_probs, times, 
         values = value.get_values(states, times, gamma, T)
     value_gradient = g.gradient(values, value.trainable_variables, output_gradients=-2*(returns-values))
     value_optimizer.apply_gradients(zip(value_gradient, value.trainable_variables))
-    
-    
+
+
 # def mb_step_optimal(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
 #             value_optimizer, gamma, T, clip, baseline, baseline_optimizer):
 #     """mini-batch update, when using GAE + optimal baseline."""

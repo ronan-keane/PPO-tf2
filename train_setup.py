@@ -1,7 +1,7 @@
 from environment import TFEnv, make_tf_env_step
 from models import DiscreteActor, MeanStdNetwork, MeanNetworkAndStdNetwork, MeanNetworkAndStd,\
     add_tanh_clipping, add_clipping, TimeAwareValue, TimeAwareValue2, RegularValue, normalize_value,\
-    OptimalBaseline, RegularBaseline, PerParameterBaseline, KPerParameterBaseline
+    OptimalBaseline, RegularBaseline, PerParameterBaseline
 from ppo import PPO
 import matplotlib.pyplot as plt
 import numpy as np
@@ -129,7 +129,7 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
         args = (baseline, baseline_optimizer, pp_baseline)
     #make ppo algorithm
     ppo = PPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
-              ppo_clip, continuous_actions, args, mb_type)
+              ppo_clip, continuous_actions)
     return ppo, cur_states
 
 class LinearDecreaseLR:
@@ -146,14 +146,22 @@ class LinearDecreaseLR:
         self.count = self.count+1
         return self.lr_max - (self.lr_max-self.lr_min)*max(update/(self.n_updates-1), 1)
 
-def plot_ep_rewards(ep_rewards_list, n_envs, nsteps):
+def plot_ep_rewards(ep_rewards_list, vars_list, n_envs, nsteps):
     plt.figure(figsize=(14.22, 8))
+    plt.subplot(1,2,1)
     n_updates = len(ep_rewards_list)
     x = [(n_envs*nsteps)*i for i in range(1, n_updates+1)]
     y = np.array([np.mean(i) for i in ep_rewards_list])
     y_std = np.array([np.std(i) for i in ep_rewards_list])
     plt.plot(x, y, 'C1')
     plt.fill_between(x, y-y_std, y+y_std, alpha=0.2, color='C1')
-    plt.ylabel('reward')
+    plt.ylabel('average reward')
     plt.xlabel('number of transitions')
+    plt.subplot(1,2,2)
+    nepochs = len(vars_list[0])
+    x = [i+1 for i in range(n_updates*nepochs)]
+    y = [i for sublist in vars_list for i in sublist]
+    plt.xlabel('epoch ({:.0f} per iteration)'.format(nepochs))
+    plt.ylabel('observed variance of mini-batch gradients')
+    plt.semilogy(x, y)
     plt.show()
