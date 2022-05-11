@@ -308,9 +308,12 @@ class OptimalBaseline(SimpleMLP):
         return self.call(states)  # shape is (batch_size, 2)
 
     def unnormalize(self, baselines):
-        mean = self.s1/self.n
-        stdev = tf.math.sqrt(1/self.n*(self.s2-tf.math.square(self.s1)/self.n))
-        return stdev*baselines + mean
+        if self.n==0:
+            return baselines
+        else:
+            mean = self.s1/self.n
+            stdev = tf.math.sqrt(1/self.n*(self.s2-tf.math.square(self.s1)/self.n))
+            return stdev*baselines + mean
 
     def normalize(self, targets):
         n = tf.cast(tf.shape(targets)[0], tf.float32)
@@ -322,15 +325,6 @@ class OptimalBaseline(SimpleMLP):
         return (targets-mean)/stdev
 
 
-class RegularBaseline(SimpleMLP):
-    """A regular state-dependent baseline."""
-    def __init__(self, num_hidden, activation):
-        super().__init__(num_hidden, activation, 1)
-
-    def get_baseline(self, states):
-        return self.call(states)
-
-
 class PerParameterBaseline:
     """A per-parameter baseline which is constant over all states."""
     def __init__(self, trainable_variables, lr):
@@ -339,26 +333,22 @@ class PerParameterBaseline:
             m += tf.math.reduce_prod(tf.shape(i))
         self.m = m
         self.baseline = tf.Variable(tf.concat([tf.zeros((m,)), 1e-6*tf.ones((m,))], axis=0), False, True)  # shape is (2*grad,)
-        self.lr = tf.cast(lr, tf.float32)
+        self.lr = tf.cast(2*lr, tf.float32)
 
-    def get_baseline(self, states):
-        """Given batch of states, returns corresponding baselines.
-
-        Args:
-            states: tf.float32 tensor of shape (batch_size, state_dim)
-        Returns:
-            tf.float32 tensor of shape (batch_size, grad_dim) giving the per-parameter baselines
-            None (this serves as a placeholder for xi)
-        """
-        n = tf.shape(states)[0]
-        baseline = self.baseline[:self.m]/self.baseline[self.m:]
-        return tf.tile(tf.expand_dims(baseline, 0), [n,1]), None
-
-    def update(self, targets, xi):
+    def update(self, targets):
         """Gradient update."""
-        n = tf.cast(tf.shape(targets)[0], tf.float32)
-        grad = 2*(tf.math.reduce_sum(targets, axis=0)-n*self.baseline)
-        self.baseline.assign_add(self.lr*grad)
+        temp = self.baseline.value()
+        temp = (1-self.lr)*temp + self.lr*targets
+        self.baseline.assign(temp)
+
+
+# class RegularBaseline(SimpleMLP):
+#     """A regular state-dependent baseline."""
+#     def __init__(self, num_hidden, activation):
+#         super().__init__(num_hidden, activation, 1)
+
+#     def get_baseline(self, states):
+#         return self.call(states)
 
 
 # class KPerParameterBaseline:
