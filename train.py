@@ -40,7 +40,7 @@ if __name__ == '__main__':
     nsteps = 1000  # each iteration samples nsteps transitions from each environment
     batch_size = 32  # mini-batch size for gradient updates
     ############ OPTIMAL BASELINES ##############
-    baseline_type = None
+    baseline_type = 'both'
     pp_args = (1e-4,)
     lr_max_baseline = 1e-4
     ############ AMOUNT OF TRAINING #############

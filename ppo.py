@@ -132,7 +132,7 @@ def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepo
     m = tf.cast(0, tf.int32)  # number of policy parameters
     for i in policy.trainable_variables:
         m = m + tf.math.reduce_prod(tf.shape(i))
-
+    
     for i in tf.range(nepochs):
         # advantages and returns are recomputed once per epoch
         returns, advantages, EV = compute_returns_advantages(
@@ -201,9 +201,10 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
     EVs = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
     Vars = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
     n = tf.cast((n_transitions // batch_size), tf.float32)  # mb updates per epoch
-    m = tf.cast(0, tf.int32)  # number of policy parameters
-    for i in policy.trainable_variables:
-        m = m + tf.math.reduce_prod(tf.shape(i))
+    # m = tf.cast(0, tf.int32)  # number of policy parameters
+    # for i in policy.trainable_variables:
+    #     m = m + tf.math.reduce_prod(tf.shape(i))
+    m = 30358
 
     for i in tf.range(nepochs):
         # advantages and returns are recomputed once per epoch
@@ -235,6 +236,8 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
             s1, s2 = mb_step_optimal(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
                     mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, s1, s2,
                     mb_baselines, pp_baselines, baseline, pp_baseline, baseline_optimizer)
+            s1.set_shape((m,))
+            s2.set_shape((m,))
 
         Var = tf.math.reduce_sum(1/n*(s2 - s1**2/n))
         Vars = Vars.write(i, Var)

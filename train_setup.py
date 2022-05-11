@@ -104,6 +104,7 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
     value_optimizer = optimizer(learning_rate=value_lr, global_clipnorm=global_clipnorm)
     # make PPO depending on whether it's optimal baseline or regular
     ppo_clip = tf.cast(ppo_clip, tf.float32)
+    assert(baseline_type is None or baseline_type=='both')
     if baseline_type is None:
         ppo = PPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
               ppo_clip, continuous_actions)
@@ -139,13 +140,12 @@ def plot_ep_rewards(ep_rewards_list, vars_list, n_envs, nsteps):
     y_std = np.array([np.std(i) for i in ep_rewards_list])
     plt.plot(x, y, 'C1')
     plt.fill_between(x, y-y_std, y+y_std, alpha=0.2, color='C1')
-    plt.ylabel('average reward')
+    plt.ylabel('average reward (running mean)')
     plt.xlabel('number of transitions')
     plt.subplot(1,2,2)
     nepochs = len(vars_list[0])
-    x = [i+1 for i in range(n_updates*nepochs)]
-    y = [i for sublist in vars_list for i in sublist]
-    plt.xlabel('epoch ({:.0f} per iteration)'.format(nepochs))
+    y = [np.mean(i) for i in vars_list]
+    plt.xlabel('number of transitions')
     plt.ylabel('observed variance of mini-batch gradients')
     plt.semilogy(x, y)
     plt.show()
