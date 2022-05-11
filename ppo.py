@@ -201,11 +201,10 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
     EVs = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
     Vars = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
     n = tf.cast((n_transitions // batch_size), tf.float32)  # mb updates per epoch
-    # m = tf.cast(0, tf.int32)  # number of policy parameters
-    # for i in policy.trainable_variables:
-    #     m = m + tf.math.reduce_prod(tf.shape(i))
-    m = 30358
-
+    m = tf.cast(0, tf.int32)  # number of policy parameters
+    for i in policy.trainable_variables:
+        m = m + tf.math.reduce_prod(tf.shape(i))
+    m = tf.zeros((m,)).shape[0]
     for i in tf.range(nepochs):
         # advantages and returns are recomputed once per epoch
         returns, advantages, EV = compute_returns_advantages(
@@ -352,6 +351,7 @@ def mb_step_optimal(policy, value, states, actions, action_log_probs, times, ret
     ghat = tf.math.reduce_sum(temp*log_grads, axis=0)  # (grad,)
     temp = tf.expand_dims(advantages, 1) - tf.expand_dims(pp_baselines, 0)
     ghat_no_opt = tf.math.reduce_sum(temp*log_grads, axis=0, keepdims=True)  # (1, grad)
+    # OLD WAY: ghat_no_opt = tf.matmul(tf.expand_dims(advantages,0), log_grads)
     # update variance of policy gradient
     s1 = s1 + ghat
     s2 = s2 + ghat**2
