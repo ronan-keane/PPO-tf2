@@ -239,7 +239,7 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
 
             # gradient updates
             s1, s2 = mb_step_optimal(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
-                    mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, s1, s2,
+                    mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, s1, s2, m,
                     mb_baselines, pp_baselines, baseline, pp_baseline, baseline_optimizer)
             s1.set_shape((m,))
             s2.set_shape((m,))
@@ -340,7 +340,7 @@ def get_log_probs_and_gradients(policy, states, actions):
     return new_log_probs.stack(), log_grads.stack()
 
 def mb_step_optimal(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
-            value_optimizer, gamma, T, clip, s1, s2,
+            value_optimizer, gamma, T, clip, s1, s2, m,
             baselines, pp_baselines, baseline, pp_baseline, baseline_optimizer):
     """mini-batch update for GAE + optimal baseline + per-parameter baseline."""
     new_log_probs, log_grads = get_log_probs_and_gradients(policy, states, actions)
@@ -366,7 +366,6 @@ def mb_step_optimal(policy, value, states, actions, action_log_probs, times, ret
     value_optimizer.apply_gradients(zip(value_gradient, value.trainable_variables))
     # optimal baselines update
     pp_baselines = pp_baseline.baseline.value()
-    m = tf.shape(pp_baselines)[0]
     pp_baselines = pp_baselines[:m]/pp_baselines[m:]
     temp = tf.expand_dims(advantages, 1) - tf.expand_dims(pp_baselines, 0)
     ghat_no_opt = tf.math.reduce_sum(temp*log_grads, axis=0, keepdims=True)
