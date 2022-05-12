@@ -12,7 +12,7 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
                 policy_activation, action_clip, means_activation, stdev_type, stdev_offset, stdev_min,
                 value_num_hidden, value_activation, value_normalization, value_type,
                 gamma, kappa, ppo_clip, global_clipnorm, optimizer, policy_lr, value_lr,
-                baseline_type, pp_args, baseline_lr):
+                baseline_type, pp_args, baseline_bounds, baseline_lr):
     """Initialize all objects needed for training loop.
 
     Args:
@@ -56,6 +56,7 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
             'optimal', add optimal per-parameter baseline. If 'pp', add per-parameter optimal baseline.
             If 'both', add both optimal and per-parameter baseline.
         pp_args: for a per parameter baseline only, *args for initialization
+        baseline_bounds: tuple of minimum, maximum allowable baseline values
         baseline_lr: if baseline_type is 'optimal' or 'both', lr argument to pass to baseline optimizer.
     Returns:
         ppo: PPO class, whose step method implements an iteration of PPO.
@@ -114,7 +115,7 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
         baseline_optimizer = optimizer(learning_rate=baseline_lr, global_clipnorm=global_clipnorm)
         pp_baseline = PerParameterBaseline(policy.trainable_variables, *pp_args)
         ppo = OptimalPPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
-              ppo_clip, continuous_actions, baseline, pp_baseline, baseline_optimizer)
+              ppo_clip, continuous_actions, baseline, pp_baseline, baseline_optimizer, baseline_bounds)
     return ppo, cur_states
 
 class LinearDecreaseLR:

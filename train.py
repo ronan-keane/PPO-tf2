@@ -43,6 +43,7 @@ if __name__ == '__main__':
     baseline_type = 'both'
     pp_args = (1e-4,)
     lr_max_baseline = 1e-4
+    baseline_bounds = (-150, 300)
     ############ AMOUNT OF TRAINING #############
     total_transitions = 1000000  # total number of sampled transitions, combined over all environments
     reward_threshold = 300  # stop training if last env.mem episodes are above this threshold
@@ -55,7 +56,7 @@ if __name__ == '__main__':
                 policy_activation, action_clip, means_activation, stdev_type, stdev_offset, stdev_min,
                 value_num_hidden, value_activation, value_normalization, value_type,
                 gamma, kappa, ppo_clip, global_clipnorm, optimizer, policy_lr, value_lr,
-                baseline_type, pp_args, baseline_lr)
+                baseline_type, pp_args, baseline_bounds, baseline_lr)
     # training loop and reporting
     n_updates = total_transitions // (n_envs*nsteps)
     ep_rewards_list = []
