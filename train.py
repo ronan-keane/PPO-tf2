@@ -16,14 +16,14 @@ if __name__ == '__main__':
     T = 1600
     env_kwargs = {}
     ############ HYPERPARAMETERS ###############
-    policy_num_hidden = [500, 250, 100]
+    policy_num_hidden = [200, 100, 50]
     policy_activation = 'relu'
     action_clip = 'tanh'
     means_activation = None
     stdev_type = 'constant'
     stdev_offset = 0.69
     stdev_min = 1e-2
-    value_num_hidden = [500, 250, 100]
+    value_num_hidden = [200, 100, 50]
     value_activation = 'relu'
     value_normalization = False
     value_type = 'time-aware'
@@ -41,10 +41,10 @@ if __name__ == '__main__':
     batch_size = 32  # mini-batch size for gradient updates
     ############ OPTIMAL BASELINES ##############
     baseline_type = 'both'
-    pp_args = ([10, 11, 12, 13], 1e-4,)
+    pp_args = (1e-4,)
     lr_max_baseline = 1e-4
     ############ AMOUNT OF TRAINING #############
-    total_transitions = 4000000  # total number of sampled transitions, combined over all environments
+    total_transitions = 1000000  # total number of sampled transitions, combined over all environments
     reward_threshold = 300  # stop training if last env.mem episodes are above this threshold
 
     # setup
@@ -59,17 +59,19 @@ if __name__ == '__main__':
     # training loop and reporting
     n_updates = total_transitions // (n_envs*nsteps)
     ep_rewards_list = []
+    vars_list = []
     pbar = tqdm.tqdm(range(n_updates))
     pbar.set_description('Calculating first iteration')
     for i in pbar:
         cur_states = ppo.step(cur_states, nepochs, nsteps, batch_size)
-        ep_rewards, ep_lens, ev, new_rewards = ppo.env.return_statistics()
+        ep_rewards, ep_lens, ev, Vars, new_rewards = ppo.env.return_statistics()
         ep_rewards_list.append(ep_rewards)
+        vars_list.append(Vars)
         pbar.set_description('Iteration {:.0f}'.format(i+1))
-        pbar.set_postfix_str('Avg ep reward={:.0f}, Avg ep len={:.0f}, Explained var={:.2f}'.format(
-            np.mean(ep_rewards), np.mean(ep_lens), np.mean(ev))+', New ep rewards: '+new_rewards)
+        pbar.set_postfix_str('Avg ep reward={:.0f}, Avg ep len={:.0f}, Explained var={:.2f}, Variance={:.2g}'.format(
+            np.mean(ep_rewards), np.mean(ep_lens), np.mean(ev), np.mean(Vars))+', New ep rewards: '+new_rewards)
         if np.mean(ep_rewards) > reward_threshold:
             break
 
-    plot_ep_rewards(ep_rewards_list, n_envs, nsteps)
+    plot_ep_rewards(ep_rewards_list, vars_list, n_envs, nsteps)
 

@@ -31,11 +31,12 @@ class PPO:
 
     def step(self, cur_states, nepochs, nsteps, batch_size):
         """Generates nsteps of experience and does PPO update for nepochs."""
-        cur_states, EVs = ppo_step(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
+        cur_states, EVs, Vars = ppo_step(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
             self.tf_env_step, nepochs, nsteps, batch_size, cur_states, self.gamma, self.kappa, self.T,
             self.clip, self.is_cont, self.mb_step, self.args)
 
         self.env.EVs = EVs.numpy()
+        self.env.Vars = Vars.numpy()
         return cur_states
 
 def make_training_data(cur_states, tf_env_step, nsteps, policy, is_cont):
@@ -109,6 +110,12 @@ def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepo
     times = tf.reshape(times, [n_transitions])
 
     EVs = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
+    Vars = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
+    n = tf.cast((n_transitions // batch_size), tf.float32)  # mb updates per epoch
+    m = tf.cast(0, tf.int32)  # number of policy parameters
+    for i in policy.trainable_variables:
+        m = m + tf.math.reduce_prod(tf.shape(i))
+    m = tf.zeros((m,)).shape[0]
     for i in tf.range(nepochs):
         # advantages and returns are recomputed once per epoch
         returns, advantages, EV = compute_returns_advantages(
@@ -116,6 +123,8 @@ def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepo
         returns = tf.reshape(returns, [n_transitions])
         advantages = tf.reshape(advantages, [n_transitions])
         EVs = EVs.write(i, EV)  # explained variance
+        s1 = tf.zeros((m,)) # s1 and s2 track variance during training
+        s2 = tf.zeros((m,))
 
         # make mini-batches. the mini-batches all have batch_size as their first dimension.
         inds = tf.random.shuffle(tf.range(n_transitions))
@@ -125,10 +134,16 @@ def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepo
                 tf.gather(states, ind), tf.gather(actions, ind), tf.gather(action_log_probs, ind), \
                 tf.gather(times, ind), tf.gather(returns, ind), tf.gather(advantages, ind)
 
-            mb_step_fn(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
-                    mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, *args)
+            s1, s2 = mb_step_fn(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
+                    mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, s1, s2, m,
+                    *args)
+            s1.set_shape((m,))
+            s2.set_shape((m,))
 
-    return cur_states, EVs.stack()
+        Var = tf.math.reduce_sum(1/n*(s2 - s1**2/n))
+        Vars = Vars.write(i, Var)
+
+    return cur_states, EVs.stack(), Vars.stack()
 
 def compute_returns_advantages(value, states, rewards, dones, times, cur_states, cur_times, gamma, kappa, T):
     """Compute returns and advantages using GAE."""
@@ -164,7 +179,7 @@ def compute_returns_advantages(value, states, rewards, dones, times, cur_states,
     return normal_returns, advs, 1-EV
 
 def mb_step(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
-            value_optimizer, gamma, T, clip, *args):
+            value_optimizer, gamma, T, clip, s1, s2, m, *args):
     """PPO update for a single mini-batch."""
     # policy update
     with tf.GradientTape() as g:
@@ -176,11 +191,15 @@ def mb_step(policy, value, states, actions, action_log_probs, times, returns, ad
     policy_gradient = g.gradient(new_log_probs, policy.trainable_variables,
                                  output_gradients=tf.expand_dims(-advantages*impt_weights*ppo_mask, axis=1))
     policy_optimizer.apply_gradients(zip(policy_gradient, policy.trainable_variables))
+    policy_gradient = flatten_grad(policy_gradient)
+    s1 = s1 + policy_gradient
+    s2 = s2 + policy_gradient**2
     # value function update
     with tf.GradientTape() as g:
         values = value.get_values(states, times, gamma, T)
     value_gradient = g.gradient(values, value.trainable_variables, output_gradients=-2*(returns-values))
     value_optimizer.apply_gradients(zip(value_gradient, value.trainable_variables))
+    return s1, s2
 
 def flatten_grad(grad):
     """Reshape a gradient (list of tensors) into a single, flattened tensor."""
@@ -297,7 +316,7 @@ def mb_step_pp(policy, value, states, actions, action_log_probs, times, returns,
     value_optimizer.apply_gradients(zip(value_gradient, value.trainable_variables))
 
 def mb_step_optimal_pp(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
-            value_optimizer, gamma, T, clip, baseline, baseline_optimizer, pp_baseline):
+            value_optimizer, gamma, T, clip, s1, s2, m, baseline, baseline_optimizer, pp_baseline):
     """mini-batch update for GAE + optimal baseline + per-parameter baseline."""
     new_log_probs, log_grads = get_log_probs_and_gradients(policy, states, actions)
     # calculate ghat_sf_only
@@ -329,10 +348,14 @@ def mb_step_optimal_pp(policy, value, states, actions, action_log_probs, times, 
     pp_baseline.update(targets, xi)
     # policy update
     ghat = -(tf.expand_dims(vr_advantages, axis=1) - pp_baselines)*tf.expand_dims(ppo_weights, axis=1)
-    ghat = reshape_grad(tf.math.reduce_sum(ghat*log_grads, axis=0), policy.trainable_variables)
+    ghat = tf.math.reduce_sum(ghat*log_grads, axis=0)
+    s1 = s1 + ghat
+    s2 = s2 + ghat**2
+    ghat = reshape_grad(ghat, policy.trainable_variables)
     policy_optimizer.apply_gradients(zip(ghat, policy.trainable_variables))
     # value function update
     with tf.GradientTape() as g:
         values = value.get_values(states, times, gamma, T)
     value_gradient = g.gradient(values, value.trainable_variables, output_gradients=-2*(returns-values))
     value_optimizer.apply_gradients(zip(value_gradient, value.trainable_variables))
+    return s1, s2

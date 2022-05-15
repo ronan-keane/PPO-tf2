@@ -34,6 +34,7 @@ class TFEnv:
         self.ep_lens = np.array([0. for i in range(mem)])  # most recent episode lengths
         self.new_rewards = []  # cumulative rewards from episodes finished this ppo iteration
         self.EVs = None  # explained variances, updated in ppo.step
+        self.Vars = None
         self.mem = mem  # memory length for rewards/ep_lens
         self.mem_count = 0
         self.new_mem = new_mem  # how many new rewards from this iteration to report seperately
@@ -107,7 +108,7 @@ class TFEnv:
             if count>0:
                 out = out+', '
             out = out+'{:.0f}'.format(i)
-        return self.rewards[self.rewards!=0.], self.ep_lens[self.ep_lens!=0.], self.EVs, out
+        return self.rewards[self.rewards!=0.], self.ep_lens[self.ep_lens!=0.], self.EVs, self.Vars, out
 
     def reset(self):
         """For initialization purposes, resets all environments and returns initial states."""
