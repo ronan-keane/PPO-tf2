@@ -239,7 +239,7 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
 
             # gradient updates
             s1, s2 = mb_step_optimal(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
-                    mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, s1, s2, m,
+                    mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, s1, s2, m, min_b, max_b,
                     mb_baselines, pp_baselines, baseline, pp_baseline, baseline_optimizer)
             s1.set_shape((m,))
             s2.set_shape((m,))
@@ -340,7 +340,7 @@ def get_log_probs_and_gradients(policy, states, actions):
     return new_log_probs.stack(), log_grads.stack()
 
 def mb_step_optimal(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
-            value_optimizer, gamma, T, clip, s1, s2, m,
+            value_optimizer, gamma, T, clip, s1, s2, m, min_b, max_b,
             baselines, pp_baselines, baseline, pp_baseline, baseline_optimizer):
     """mini-batch update for GAE + optimal baseline + per-parameter baseline."""
     new_log_probs, log_grads = get_log_probs_and_gradients(policy, states, actions)
@@ -365,19 +365,24 @@ def mb_step_optimal(policy, value, states, actions, action_log_probs, times, ret
     value_gradient = g.gradient(values, value.trainable_variables, output_gradients=-2*(returns-values))
     value_optimizer.apply_gradients(zip(value_gradient, value.trainable_variables))
     # optimal baselines update
-    pp_baselines = pp_baseline.baseline.value()
-    pp_baselines = pp_baselines[:m]/pp_baselines[m:]
-    temp = tf.expand_dims(advantages, 1) - tf.expand_dims(pp_baselines, 0)
-    ghat_no_opt = tf.math.reduce_sum(temp*log_grads, axis=0, keepdims=True)
+    # pp_baselines = pp_baseline.baseline.value()
+    # pp_baselines = pp_baselines[:m]/pp_baselines[m:]
+    # pp_baselines = tf.clip_by_value(pp_baselines, min_b, max_b)
+    # temp = tf.expand_dims(advantages, 1) - tf.expand_dims(pp_baselines, 0)
+    # ghat_no_opt = tf.math.reduce_sum(temp*log_grads, axis=0, keepdims=True)
+    ghat_no_opt = tf.matmul(tf.expand_dims(advantages,0), log_grads)
     targets = tf.matmul(log_grads, ghat_no_opt, transpose_b=True)
     targets_denom = tf.math.square(log_grads)
     targets = tf.concat([targets, tf.math.reduce_sum(targets_denom, axis=1, keepdims=True)], axis=1)
+    targets = baseline.normalize(targets)
     with tf.GradientTape() as g:
         baselines = baseline.get_baseline(states)
     baseline_gradient = g.gradient(baselines, baseline.trainable_variables, output_gradients=-2*(targets-baselines))
     baseline_optimizer.apply_gradients(zip(baseline_gradient, baseline.trainable_variables))
     # per parameter baselines update
+    baselines = baseline.unnormalize(baselines)
     baselines = baselines[:,0]/baselines[:,1]
+    baselines = tf.clip_by_value(baselines, min_b, max_b)
     temp = tf.expand_dims(advantages-baselines, 0)
     ghat_no_pp = tf.matmul(temp, log_grads)
     targets = log_grads*ghat_no_pp

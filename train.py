@@ -28,7 +28,7 @@ if __name__ == '__main__':
     value_normalization = False
     value_type = 'time-aware'
     gamma = 0.992
-    kappa = 0.95
+    kappa = 0.5
     ppo_clip = 0.2
     global_clipnorm = None
     optimizer = tf.keras.optimizers.Adam
