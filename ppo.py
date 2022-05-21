@@ -61,6 +61,7 @@ class OptimalPPO:
         self.env.Vars = Vars.numpy()
         return cur_states
 
+@tf.function
 def make_training_data(cur_states, tf_env_step, nsteps, policy, is_cont):
     """For each environment, simulate nsteps transitions and record all data."""
     action_dtype = tf.float32 if is_cont else tf.int32
@@ -205,9 +206,7 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
     EVs = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
     Vars = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
     n = tf.cast((n_transitions // batch_size), tf.float32)  # mb updates per epoch
-    m = tf.cast(0, tf.int32)  # number of policy parameters
-    for i in policy.trainable_variables:
-        m = m + tf.math.reduce_prod(tf.shape(i))
+    m = tf.reduce_sum([tf.reduce_prod(i.shape) for i in policy.trainable_variables])
     m = tf.zeros((m,)).shape[0]
     for i in tf.range(nepochs):
         # advantages and returns are recomputed once per epoch
@@ -249,6 +248,7 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
 
     return cur_states, EVs.stack(), Vars.stack()
 
+@tf.function
 def compute_returns_advantages(value, states, rewards, dones, times, cur_states, cur_times, gamma, kappa, T):
     """Compute returns and advantages using GAE."""
     # Args:
@@ -282,6 +282,7 @@ def compute_returns_advantages(value, states, rewards, dones, times, cur_states,
     EV = tf.math.reduce_std(advs)**2/tf.math.reduce_std(values)**2
     return normal_returns, advs, 1-EV
 
+@tf.function
 def mb_step(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
             value_optimizer, gamma, T, clip, s1, s2):
     """PPO update for a single mini-batch."""
@@ -323,9 +324,21 @@ def reshape_grad(flattened_grad, trainable_variables):
         curind = nextind
     return temp
 
+# @tf.function
+# def get_log_probs_and_gradients(policy, states, actions):
+#     """For a batch of state-action pairs, calculate each score function (grad of log probability)."""
+#     with tf.GradientTape() as g:
+#         log_probs = policy.log_probs_from_actions(states, actions)
+#         out = tf.squeeze(log_probs)
+#     log_grads = g.jacobian(out, policy.trainable_variables)
+#     temp = [None]*len(log_grads)
+#     for i, g in enumerate(log_grads):
+#         temp[i] = tf.reshape(g, (tf.shape(g)[0], -1))
+#     return log_probs, tf.concat(temp, 1)
+
+@tf.function
 def get_log_probs_and_gradients(policy, states, actions):
     """For a batch of state-action pairs, calculate each score function (grad of log probability)."""
-    # TODO add parralelism here
     n = tf.shape(states)[0]
     new_log_probs = tf.TensorArray(tf.float32, size=n, dynamic_size=False)
     log_grads = tf.TensorArray(tf.float32, size=n, dynamic_size=False)
@@ -339,6 +352,7 @@ def get_log_probs_and_gradients(policy, states, actions):
     # shapes of (n, 1) and (n, grad)
     return new_log_probs.stack(), log_grads.stack()
 
+@tf.function
 def mb_step_optimal(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
             value_optimizer, gamma, T, clip, s1, s2, m, min_b, max_b,
             baselines, pp_baselines, baseline, pp_baseline, baseline_optimizer):
@@ -364,12 +378,7 @@ def mb_step_optimal(policy, value, states, actions, action_log_probs, times, ret
         values = value.get_values(states, times, gamma, T)
     value_gradient = g.gradient(values, value.trainable_variables, output_gradients=-2*(returns-values))
     value_optimizer.apply_gradients(zip(value_gradient, value.trainable_variables))
-    # optimal baselines update
-    # pp_baselines = pp_baseline.baseline.value()
-    # pp_baselines = pp_baselines[:m]/pp_baselines[m:]
-    # pp_baselines = tf.clip_by_value(pp_baselines, min_b, max_b)
-    # temp = tf.expand_dims(advantages, 1) - tf.expand_dims(pp_baselines, 0)
-    # ghat_no_opt = tf.math.reduce_sum(temp*log_grads, axis=0, keepdims=True)
+    # optimal baseline update
     ghat_no_opt = tf.matmul(tf.expand_dims(advantages,0), log_grads)
     targets = tf.matmul(log_grads, ghat_no_opt, transpose_b=True)
     targets_denom = tf.math.square(log_grads)
