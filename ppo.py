@@ -363,10 +363,9 @@ def mb_step_optimal(policy, value, states, actions, action_log_probs, times, ret
     ppo_mask = tf.math.logical_or(tf.math.logical_and(tf.math.greater(advantages, 0), tf.math.greater(impt_weights, 1+clip)),
                                   tf.math.logical_and(tf.math.less(advantages,0), tf.math.less(impt_weights, 1-clip)))
     ppo_mask = tf.cast(tf.logical_not(ppo_mask), tf.float32)
-    advantages = advantages*ppo_mask
     log_grads = tf.expand_dims(impt_weights, axis=1)*log_grads
-    temp = tf.expand_dims(advantages-baselines, 1) - tf.expand_dims(pp_baselines, 0)  # (n,)
-    ghat = tf.math.reduce_sum(temp*log_grads, axis=0)
+    temp = tf.expand_dims(advantages-baselines, 1) - tf.expand_dims(pp_baselines, 0)  # (n, grad)
+    ghat = tf.math.reduce_sum((tf.expand_dims(ppo_mask, 1)*temp)*log_grads, axis=0)
     # update variance of policy gradient
     s1 = s1 + ghat
     s2 = s2 + ghat**2
@@ -379,8 +378,9 @@ def mb_step_optimal(policy, value, states, actions, action_log_probs, times, ret
     value_gradient = g.gradient(values, value.trainable_variables, output_gradients=-2*(returns-values))
     value_optimizer.apply_gradients(zip(value_gradient, value.trainable_variables))
     # optimal baseline update
-    ghat_no_opt = tf.matmul(tf.expand_dims(advantages,0), log_grads)
-    targets = tf.matmul(log_grads, ghat_no_opt, transpose_b=True)
+    advantages = advantages*ppo_mask
+    ghat_sf_only = tf.matmul(tf.expand_dims(advantages,0), log_grads)
+    targets = tf.matmul(log_grads, ghat_sf_only, transpose_b=True)
     targets_denom = tf.math.square(log_grads)
     targets = tf.concat([targets, tf.math.reduce_sum(targets_denom, axis=1, keepdims=True)], axis=1)
     targets = baseline.normalize(targets)

@@ -111,7 +111,7 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
               ppo_clip, continuous_actions)
     elif baseline_type=='both':
         baseline = OptimalBaseline(value_num_hidden, value_activation)
-        baseline(cur_states)
+        baseline.get_baseline(cur_states)
         baseline_optimizer = optimizer(learning_rate=baseline_lr, global_clipnorm=global_clipnorm)
         pp_baseline = PerParameterBaseline(policy.trainable_variables, *pp_args)
         ppo = OptimalPPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,

@@ -43,7 +43,7 @@ if __name__ == '__main__':
     baseline_type = 'both'
     pp_args = (1e-4,)
     lr_max_baseline = 1e-4
-    baseline_bounds = (-150, 300)
+    baseline_bounds = (-50, 100)
     ############ AMOUNT OF TRAINING #############
     total_transitions = 1000000  # total number of sampled transitions, combined over all environments
     reward_threshold = 300  # stop training if last env.mem episodes are above this threshold

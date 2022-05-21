@@ -305,6 +305,12 @@ class OptimalBaseline(SimpleMLP):
         Returns:
             tf.float32 tensor of shape (batch_size, 2), giving the numerator and denominator of each baseline
         """
+        batch_size = tf.shape(states)[0]
+        mean_state = tf.reduce_mean(states, axis=0, keepdims=True)
+        std_state = tf.math.reduce_std(states, axis=0, keepdims=True)
+        extra_state = tf.concat([mean_state, std_state], 1)
+        extra_state = tf.tile(extra_state, [batch_size, 1])
+        states = tf.concat([states, extra_state], 1)
         return self.call(states)  # shape is (batch_size, 2)
 
     def unnormalize(self, baselines):
