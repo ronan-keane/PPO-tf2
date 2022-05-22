@@ -41,9 +41,9 @@ if __name__ == '__main__':
     batch_size = 32  # mini-batch size for gradient updates
     ############ OPTIMAL BASELINES ##############
     baseline_type = 'both'
-    pp_args = (1e-4,)
+    baseline_args = (0.01, 1e-4,)
     lr_max_baseline = 1e-4
-    baseline_bounds = (-5, 10)
+    baseline_bounds = (-10, 10)
     ############ AMOUNT OF TRAINING #############
     total_transitions = 1000000  # total number of sampled transitions, combined over all environments
     reward_threshold = 300  # stop training if last env.mem episodes are above this threshold
@@ -56,11 +56,12 @@ if __name__ == '__main__':
                 policy_activation, action_clip, means_activation, stdev_type, stdev_offset, stdev_min,
                 value_num_hidden, value_activation, value_normalization, value_type,
                 gamma, kappa, ppo_clip, global_clipnorm, optimizer, policy_lr, value_lr,
-                baseline_type, pp_args, baseline_bounds, baseline_lr)
+                baseline_type, baseline_args, baseline_bounds, baseline_lr)
     # training loop and reporting
     n_updates = total_transitions // (n_envs*nsteps)
     ep_rewards_list = []
     vars_list = []
+    vars2_list = []
     pbar = tqdm.tqdm(range(n_updates))
     pbar.set_description('Calculating first iteration')
     for i in pbar:
@@ -69,6 +70,7 @@ if __name__ == '__main__':
         Vars2 = Vars if Vars2 is None else Vars2
         ep_rewards_list.append(ep_rewards)
         vars_list.append(Vars)
+        vars2_list.append(Vars2)
         pbar.set_description('Iteration {:.0f}'.format(i+1))
         pbar.set_postfix_str('Avg ep reward={:.0f}, Avg ep len={:.0f}, Explained var={:.2f}, Variance={:.2g}, No Baseline Var={:.2g}'.format(
             np.mean(ep_rewards), np.mean(ep_lens), np.mean(ev), np.mean(Vars), np.mean(Vars2))+', New ep rewards: '+new_rewards)

@@ -291,11 +291,13 @@ def normalize_value(value):
 
 class OptimalBaseline(SimpleMLP):
     """Regular MLP for estimating the optimal baseline."""
-    def __init__(self, num_hidden, activation):
+    def __init__(self, num_hidden, activation, minimum_denominator, lr):
         super().__init__(num_hidden, activation, 2)
-        self.n = tf.Variable(tf.cast(0., tf.float32), False, True)
-        self.s1 = tf.Variable(tf.zeros((1,2)), False, True)
-        self.s2 = tf.Variable(tf.zeros((1,2)), False, True)
+        self.n = tf.Variable(tf.cast(0, tf.int32), False, True)
+        self.lr = tf.cast(lr, tf.float32)
+        self.c = tf.Variable(tf.cast(minimum_denominator, tf.float32), False, True)
+        self.means = tf.Variable(tf.zeros((1,2)), False, True)
+        self.stds = tf.Variable(tf.zeros((1,2)), False, True)
 
     def get_baseline(self, states):
         """Given batch of states, returns corresponding baselines.
@@ -311,24 +313,39 @@ class OptimalBaseline(SimpleMLP):
         extra_state = tf.concat([mean_state, std_state], 1)
         extra_state = tf.tile(extra_state, [batch_size, 1])
         states = tf.concat([states, extra_state], 1)
-        return self.call(states)  # shape is (batch_size, 2)
+        out = self.call(states)  # shape is (batch_size, 2)
+        top, bot = out[:,0], out[:,1]
+        mean, std = self.means.value()[0,1], self.stds.value()[0,1]
+        if self.n < 2:
+            min_value = tf.cast(1e-6, tf.float32)
+        else:
+            min_value = (self.c-1)*mean/std
+        bot = tf.clip_by_value(bot, min_value, tf.cast(1e6, tf.float32))
+        return tf.stack([top, bot],axis=1)
 
     def unnormalize(self, baselines):
         if self.n==0:
+            self.n.assign(tf.cast(1, tf.int32))
             return baselines
         else:
-            mean = self.s1/self.n
-            stdev = tf.math.sqrt(1/self.n*(self.s2-tf.math.square(self.s1)/self.n))
+            mean = self.means.value()
+            stdev = self.stds.value()
             return stdev*baselines + mean
 
     def normalize(self, targets):
-        n = tf.cast(tf.shape(targets)[0], tf.float32)
-        self.n.assign_add(n)
-        self.s1.assign_add(tf.math.reduce_sum(targets, axis=0, keepdims=True))
-        self.s2.assign_add(tf.math.reduce_sum(tf.math.square(targets), axis=0, keepdims=True))
-        mean = self.s1/self.n
-        stdev = tf.math.sqrt(1/self.n*(self.s2-tf.math.square(self.s1)/self.n))
-        return (targets-mean)/stdev
+        new_mean = tf.math.reduce_mean(targets, axis=0, keepdims=True)
+        new_std = tf.math.reduce_std(targets, axis=0, keepdims=True)
+        old_means = self.means.value()
+        old_stds = self.stds.value()
+        means = (1-self.lr)*old_means+self.lr*new_mean
+        stds = (1-self.lr)*old_stds+self.lr*new_std
+        self.means.assign(means)
+        self.stds.assign(stds)
+        if self.n==1:
+            self.n.assign(tf.cast(2, tf.int32))
+            return (targets-new_mean)/new_std
+        else:
+            return (targets-old_means)/old_stds
 
 
 class PerParameterBaseline:
