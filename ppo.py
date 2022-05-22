@@ -53,12 +53,13 @@ class OptimalPPO:
 
     def step(self, cur_states, nepochs, nsteps, batch_size):
         """Generates nsteps of experience and does PPO update for nepochs."""
-        cur_states, EVs, Vars = ppo_step_optimal(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
+        cur_states, EVs, Vars, Vars2 = ppo_step_optimal(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
             self.tf_env_step, nepochs, nsteps, batch_size, cur_states, self.gamma, self.kappa, self.T,
             self.clip, self.is_cont, self.baseline, self.pp_baseline, self.baseline_optimizer, self.min_b, self.max_b)
 
         self.env.EVs = EVs.numpy()
         self.env.Vars = Vars.numpy()
+        self.env.Vars2 = Vars2.numpy()
         return cur_states
 
 @tf.function
@@ -205,6 +206,7 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
 
     EVs = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
     Vars = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
+    Vars2 = tf.TensorArray(tf.float32, size=nepochs, dynamic_size=False)
     n = tf.cast((n_transitions // batch_size), tf.float32)  # mb updates per epoch
     m = tf.reduce_sum([tf.reduce_prod(i.shape) for i in policy.trainable_variables])
     m = tf.zeros((m,)).shape[0]
@@ -226,6 +228,8 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
         EVs = EVs.write(i, EV)  # explained variance
         s1 = tf.zeros((m,)) # s1 and s2 track variance during training
         s2 = tf.zeros((m,))
+        s12 = tf.zeros((m,))
+        s22 = tf.zeros((m,))
 
         # make mini-batches. the mini-batches all have batch_size as their first dimension.
         inds = tf.random.shuffle(tf.range(n_transitions))
@@ -237,16 +241,20 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
             mb_baselines = tf.gather(baselines, ind)
 
             # gradient updates
-            s1, s2 = mb_step_optimal(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
-                    mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, s1, s2, m, min_b, max_b,
+            s1, s2, s12, s22 = mb_step_optimal(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
+                    mb_advantages, policy_optimizer, value_optimizer, gamma, T, clip, s1, s2, m, min_b, max_b, s12, s22,
                     mb_baselines, pp_baselines, baseline, pp_baseline, baseline_optimizer)
             s1.set_shape((m,))
             s2.set_shape((m,))
+            s12.set_shape((m,))
+            s22.set_shape((m,))
 
         Var = tf.math.reduce_sum(1/n*(s2 - s1**2/n))
+        Var2 = tf.math.reduce_sum(1/n*(s22 - s12**2/n))
         Vars = Vars.write(i, Var)
+        Vars2 = Vars2.write(i, Var2)
 
-    return cur_states, EVs.stack(), Vars.stack()
+    return cur_states, EVs.stack(), Vars.stack(), Vars2.stack()
 
 @tf.function
 def compute_returns_advantages(value, states, rewards, dones, times, cur_states, cur_times, gamma, kappa, T):
@@ -354,7 +362,7 @@ def get_log_probs_and_gradients(policy, states, actions):
 
 @tf.function
 def mb_step_optimal(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
-            value_optimizer, gamma, T, clip, s1, s2, m, min_b, max_b,
+            value_optimizer, gamma, T, clip, s1, s2, m, min_b, max_b, s12, s22,
             baselines, pp_baselines, baseline, pp_baseline, baseline_optimizer):
     """mini-batch update for GAE + optimal baseline + per-parameter baseline."""
     new_log_probs, log_grads = get_log_probs_and_gradients(policy, states, actions)
@@ -388,6 +396,10 @@ def mb_step_optimal(policy, value, states, actions, action_log_probs, times, ret
         baselines = baseline.get_baseline(states)
     baseline_gradient = g.gradient(baselines, baseline.trainable_variables, output_gradients=-2*(targets-baselines))
     baseline_optimizer.apply_gradients(zip(baseline_gradient, baseline.trainable_variables))
+    # update variance of vanilla policy gradient
+    ghat_sf_only = tf.squeeze(ghat_sf_only)
+    s12 = s12 + ghat_sf_only
+    s22 = s22 + ghat_sf_only**2
     # per parameter baselines update
     baselines = baseline.unnormalize(baselines)
     baselines = baselines[:,0]/baselines[:,1]
@@ -397,7 +409,7 @@ def mb_step_optimal(policy, value, states, actions, action_log_probs, times, ret
     targets = log_grads*ghat_no_pp
     targets = tf.concat([tf.math.reduce_mean(targets, axis=0), tf.math.reduce_mean(targets_denom, axis=0)], 0)
     pp_baseline.update(targets)
-    return s1, s2
+    return s1, s2, s12, s22
 
 
 # def mb_step_optimal(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
