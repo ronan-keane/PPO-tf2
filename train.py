@@ -37,7 +37,7 @@ if __name__ == '__main__':
     lr_max_value = 1e-4
     lr_min_value = 1e-4
     nepochs = 10  # number of epochs to train each iteration
-    nsteps = 1000  # each iteration samples nsteps transitions from each environment
+    nsteps = 32  # each iteration samples nsteps transitions from each environment
     batch_size = 32  # mini-batch size for gradient updates
     ############ OPTIMAL BASELINES ##############
     baseline_type = 'both'

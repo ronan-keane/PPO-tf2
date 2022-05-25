@@ -300,7 +300,7 @@ class OptimalBaseline(SimpleMLP):
         self.stds = tf.Variable(tf.zeros((1,2)), False, True)
 
     def get_baseline(self, states):
-        """Given batch of states, returns corresponding baselines.
+        """Given batch of states, returns expectation estimates for the optimal baseline.
 
         Args:
             states: tf.float32 tensor of shape (batch_size, state_dim)
@@ -314,54 +314,125 @@ class OptimalBaseline(SimpleMLP):
         extra_state = tf.tile(extra_state, [batch_size, 1])
         states = tf.concat([states, extra_state], 1)
         out = self.call(states)  # shape is (batch_size, 2)
-        top, bot = out[:,0], out[:,1]
-        mean, std = self.means.value()[0,1], self.stds.value()[0,1]
-        if self.n < 2:
-            min_value = tf.cast(1e-6, tf.float32)
-        else:
-            min_value = (self.c-1)*mean/std
-        bot = tf.clip_by_value(bot, min_value, tf.cast(1e6, tf.float32))
-        return tf.stack([top, bot],axis=1)
+        return out
 
     def unnormalize(self, baselines):
+        """Given output of get_baseline, generate actual baseline values."""
         if self.n==0:
-            self.n.assign(tf.cast(1, tf.int32))
-            return baselines
+            return baselines[:,0]/baselines[:,1]
         else:
             mean = self.means.value()
             stdev = self.stds.value()
-            return stdev*baselines + mean
+            out = stdev*baselines + mean
+            top, bot = out[:,0], out[:,1]
+            mean = mean[0,1]
+            bot = tf.math.maximum(bot, self.c*mean)
+            return top/bot
 
     def normalize(self, targets):
+        """Normalize targets for expectation estimates."""
         new_mean = tf.math.reduce_mean(targets, axis=0, keepdims=True)
         new_std = tf.math.reduce_std(targets, axis=0, keepdims=True)
         old_means = self.means.value()
         old_stds = self.stds.value()
         means = (1-self.lr)*old_means+self.lr*new_mean
         stds = (1-self.lr)*old_stds+self.lr*new_std
-        self.means.assign(means)
-        self.stds.assign(stds)
-        if self.n==1:
-            self.n.assign(tf.cast(2, tf.int32))
+        if self.n==0:
+            self.n.assign(tf.cast(1, tf.int32))
+            self.means.assign(new_mean)
+            self.stds.assign(new_std)
             return (targets-new_mean)/new_std
         else:
+            self.means.assign(means)
+            self.stds.assign(stds)
             return (targets-old_means)/old_stds
+
+
+# class PerParameterBaseline:
+#     """A per-parameter baseline which is constant over all states."""
+#     def __init__(self, trainable_variables, lr):
+#         m = 0
+#         for i in trainable_variables:
+#             m += tf.math.reduce_prod(tf.shape(i))
+#         self.m = m
+#         self.baseline = tf.Variable(tf.concat([tf.zeros((m,)), 1e-6*tf.ones((m,))], axis=0), False, True)  # shape is (2*grad,)
+#         self.lr = tf.cast(2*lr, tf.float32)
+        
+#     def get_baseline(self, states):
+#         """Given batch of states, returns expectation estimates for the optimal baseline."""
+#         return self.baseline.value()
+    
+#     def unnormalize(self, baselines):
+#         """Given output of get_baseline, generate actual baseline values."""
+#         m = self.m
+#         return baselines[:m]/baselines[m:]
+        
+#     def normalize(self, targets):
+#         """Normalize targets for expectation estimates."""
+#         return targets
+            
+#     def update(self, targets):
+#         """Gradient update."""
+#         temp = self.baseline.value()
+#         temp = (1-self.lr)*temp + self.lr*targets
+#         self.baseline.assign(temp)
 
 
 class PerParameterBaseline:
     """A per-parameter baseline which is constant over all states."""
-    def __init__(self, trainable_variables, lr):
+    def __init__(self, trainable_variables, minimum_denominator, lr):
+        self.n = tf.Variable(tf.cast(0, tf.int32), False, True)
         m = 0
         for i in trainable_variables:
             m += tf.math.reduce_prod(tf.shape(i))
         self.m = m
+        self.c = tf.Variable(tf.cast(minimum_denominator, tf.float32), False, True)
         self.baseline = tf.Variable(tf.concat([tf.zeros((m,)), 1e-6*tf.ones((m,))], axis=0), False, True)  # shape is (2*grad,)
-        self.lr = tf.cast(2*lr, tf.float32)
-
+        self.means = tf.Variable(tf.zeros((2*m,)), False, True)
+        self.stds = tf.Variable(tf.zeros((2*m,)), False, True)
+        self.lr = tf.cast(lr, tf.float32)
+        
+    def get_baseline(self, states):
+        """Given batch of states, returns expectation estimates for the optimal baseline."""
+        return self.baseline.value()
+    
+    def unnormalize(self, baselines):
+        """Given output of get_baseline, generate actual baseline values."""
+        m = self.m
+        if self.n==0:
+            return baselines[:m]/baselines[m:]
+        else:
+            mean = self.means.value()
+            stdev = self.stds.value()
+            out = stdev*baselines+mean
+            top, bot = out[:m], out[m:]
+            mean = mean[m:]
+            bot = tf.math.maximum(bot, self.c*mean)
+            return top/bot
+        
+    def normalize(self, targets):
+        """Normalize targets for expectation estimates."""
+        new_mean = tf.math.reduce_mean(targets, axis=0)
+        new_std = tf.math.reduce_std(targets, axis=0)
+        old_means = self.means.value()
+        old_stds = self.stds.value()
+        means = (1-self.lr)*old_means+self.lr*new_mean
+        stds = (1-self.lr)*old_stds+self.lr*new_std
+        if self.n==0:
+            self.n.assign(tf.cast(1, tf.int32))
+            self.means.assign(new_mean)
+            self.stds.assign(new_std)
+            return (targets-new_mean)/new_std
+        else:
+            self.means.assign(means)
+            self.stds.assign(stds)
+            return (targets-old_means)/old_stds
+            
     def update(self, targets):
         """Gradient update."""
+        targets = tf.math.reduce_mean(targets, axis=0)
         temp = self.baseline.value()
-        temp = (1-self.lr)*temp + self.lr*targets
+        temp = (1-2*self.lr)*temp + 2*self.lr*targets
         self.baseline.assign(temp)
 
 
