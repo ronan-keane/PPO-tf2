@@ -62,7 +62,7 @@ class OptimalPPO:
         self.env.Vars2 = Vars2.numpy()
         return cur_states
 
-#@tf.function
+@tf.function
 def make_training_data(cur_states, tf_env_step, nsteps, policy, is_cont):
     """For each environment, simulate nsteps transitions and record all data."""
     action_dtype = tf.float32 if is_cont else tf.int32
@@ -96,7 +96,7 @@ def make_training_data(cur_states, tf_env_step, nsteps, policy, is_cont):
     action_log_probs = tf.transpose(action_log_probs.stack(), perm=[1,0,2])
     return states, actions, rewards, dones, times, action_log_probs, cur_states
 
-#@tf.function
+@tf.function
 def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepochs, nsteps, batch_size,
              cur_states, gamma, kappa, T, clip, is_cont):
     """Generates nsteps of experience and does PPO update for nepochs.
@@ -166,7 +166,7 @@ def ppo_step(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepo
 
     return cur_states, EVs.stack(), Vars.stack()
 
-#@tf.function
+@tf.function
 def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_step, nepochs, nsteps, batch_size,
              cur_states, gamma, kappa, T, clip, is_cont, baseline, pp_baseline, baseline_optimizer, min_b, max_b):
     """An iteration of PPO, with optimal baselines added.
@@ -219,8 +219,8 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
         # baselines are computed once per epoch
         baselines = baseline.get_baseline(states)
         baselines = baseline.unnormalize(baselines)
-        pp_baselines = pp_baseline.get_baseline(states)
-        pp_baselines = pp_baseline.unnormalize(pp_baselines)
+        pp_baselines = pp_baseline.baseline.value()
+        pp_baselines = tf.math.divide_no_nan(pp_baselines[:m], pp_baselines[m:])
         baselines = tf.clip_by_value(baselines, min_b, max_b)
         pp_baselines = tf.clip_by_value(pp_baselines, min_b, max_b)
 
@@ -255,7 +255,7 @@ def ppo_step_optimal(policy, value, policy_optimizer, value_optimizer, tf_env_st
 
     return cur_states, EVs.stack(), Vars.stack(), Vars2.stack()
 
-#@tf.function
+@tf.function
 def compute_returns_advantages(value, states, rewards, dones, times, cur_states, cur_times, gamma, kappa, T):
     """Compute returns and advantages using GAE."""
     # Args:
@@ -289,7 +289,7 @@ def compute_returns_advantages(value, states, rewards, dones, times, cur_states,
     EV = tf.math.reduce_std(advs)**2/tf.math.reduce_std(values)**2
     return normal_returns, advs, 1-EV
 
-#@tf.function
+@tf.function
 def mb_step(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
             value_optimizer, gamma, T, clip, s1, s2):
     """PPO update for a single mini-batch."""
@@ -331,7 +331,7 @@ def reshape_grad(flattened_grad, trainable_variables):
         curind = nextind
     return temp
 
-# #@tf.function
+# @tf.function
 # def get_log_probs_and_gradients(policy, states, actions):
 #     """For a batch of state-action pairs, calculate each score function (grad of log probability)."""
 #     with tf.GradientTape() as g:
@@ -343,7 +343,7 @@ def reshape_grad(flattened_grad, trainable_variables):
 #         temp[i] = tf.reshape(g, (tf.shape(g)[0], -1))
 #     return log_probs, tf.concat(temp, 1)
 
-#@tf.function
+@tf.function
 def get_log_probs_and_gradients(policy, states, actions):
     """For a batch of state-action pairs, calculate each score function (grad of log probability)."""
     n = tf.shape(states)[0]
@@ -359,7 +359,7 @@ def get_log_probs_and_gradients(policy, states, actions):
     # shapes of (n, 1) and (n, grad)
     return new_log_probs.stack(), log_grads.stack()
 
-#@tf.function
+@tf.function
 def mb_step_optimal(policy, value, states, actions, action_log_probs, times, returns, advantages, policy_optimizer,
             value_optimizer, gamma, T, clip, s1, s2, m, min_b, max_b, s12, s22,
             baselines, pp_baselines, baseline, pp_baseline, baseline_optimizer):
@@ -408,8 +408,6 @@ def mb_step_optimal(policy, value, states, actions, action_log_probs, times, ret
     temp = tf.expand_dims(advantages-baselines, 0)
     ghat_no_pp = tf.matmul(temp, log_grads)
     targets = log_grads*ghat_no_pp
-    # targets = tf.concat([tf.math.reduce_mean(targets, axis=0), tf.math.reduce_mean(targets_denom, axis=0)], 0)
-    targets = tf.concat([targets, targets_denom], 1)
-    targets = pp_baseline.normalize(targets)
+    targets = tf.concat([tf.math.reduce_mean(targets, axis=0), tf.math.reduce_mean(targets_denom, axis=0)], 0)
     pp_baseline.update(targets)
     return s1, s2, s12, s22

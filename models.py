@@ -348,15 +348,35 @@ class OptimalBaseline(SimpleMLP):
             return (targets-old_means)/old_stds
 
 
+class PerParameterBaseline:
+    """A per-parameter baseline which is constant over all states."""
+    def __init__(self, trainable_variables, lr):
+        m = 0
+        for i in trainable_variables:
+            m += tf.math.reduce_prod(tf.shape(i))
+        self.baseline = tf.Variable(tf.concat([tf.zeros((m,)), 1e-6*tf.ones((m,))], axis=0), False, True)  # shape is (2*grad,)
+        self.lr = tf.cast(2*lr, tf.float32)
+            
+    def update(self, targets):
+        """Gradient update."""
+        temp = self.baseline.value()
+        temp = (1-self.lr)*temp + self.lr*targets
+        self.baseline.assign(temp)
+        
+        
 # class PerParameterBaseline:
 #     """A per-parameter baseline which is constant over all states."""
-#     def __init__(self, trainable_variables, lr):
+#     def __init__(self, trainable_variables, minimum_denominator, lr):
+#         self.n = tf.Variable(tf.cast(0, tf.int32), False, True)
 #         m = 0
 #         for i in trainable_variables:
 #             m += tf.math.reduce_prod(tf.shape(i))
 #         self.m = m
+#         self.c = tf.Variable(tf.cast(minimum_denominator, tf.float32), False, True)
 #         self.baseline = tf.Variable(tf.concat([tf.zeros((m,)), 1e-6*tf.ones((m,))], axis=0), False, True)  # shape is (2*grad,)
-#         self.lr = tf.cast(2*lr, tf.float32)
+#         self.means = tf.Variable(tf.zeros((2*m,)), False, True)
+#         self.stds = tf.Variable(tf.zeros((2*m,)), False, True)
+#         self.lr = tf.cast(lr, tf.float32)
         
 #     def get_baseline(self, states):
 #         """Given batch of states, returns expectation estimates for the optimal baseline."""
@@ -365,75 +385,44 @@ class OptimalBaseline(SimpleMLP):
 #     def unnormalize(self, baselines):
 #         """Given output of get_baseline, generate actual baseline values."""
 #         m = self.m
-#         return baselines[:m]/baselines[m:]
+#         if self.n==0:
+#             return baselines[:m]/baselines[m:]
+#         else:
+#             mean = self.means.value()
+#             stdev = self.stds.value()
+#             out = stdev*baselines+mean
+#             top, bot = out[:m], out[m:]
+#             mean = mean[m:]
+#             bot = tf.math.maximum(bot, self.c*mean)
+#             return tf.math.divide_no_nan(top, bot)
         
 #     def normalize(self, targets):
 #         """Normalize targets for expectation estimates."""
-#         return targets
+#         new_mean = tf.math.reduce_mean(targets, axis=0)
+#         new_std = tf.math.reduce_std(targets, axis=0)
+#         old_means = self.means.value()
+#         old_stds = self.stds.value()
+#         means = (1-self.lr)*old_means+self.lr*new_mean
+#         stds = (1-self.lr)*old_stds+self.lr*new_std
+#         if self.n==0:
+#             self.n.assign(tf.cast(1, tf.int32))
+#             self.means.assign(new_mean)
+#             self.stds.assign(new_std)
+#             return tf.math.divide_no_nan(targets-new_mean, new_std)
+#         else:
+#             self.means.assign(means)
+#             self.stds.assign(stds)
+#             return tf.math.divide_no_nan(targets-old_means, old_stds)
             
 #     def update(self, targets):
 #         """Gradient update."""
+#         targets = tf.math.reduce_mean(targets, axis=0)
 #         temp = self.baseline.value()
-#         temp = (1-self.lr)*temp + self.lr*targets
+#         temp = (1-2*self.lr)*temp + 2*self.lr*targets
 #         self.baseline.assign(temp)
-
-
-class PerParameterBaseline:
-    """A per-parameter baseline which is constant over all states."""
-    def __init__(self, trainable_variables, minimum_denominator, lr):
-        self.n = tf.Variable(tf.cast(0, tf.int32), False, True)
-        m = 0
-        for i in trainable_variables:
-            m += tf.math.reduce_prod(tf.shape(i))
-        self.m = m
-        self.c = tf.Variable(tf.cast(minimum_denominator, tf.float32), False, True)
-        self.baseline = tf.Variable(tf.concat([tf.zeros((m,)), 1e-6*tf.ones((m,))], axis=0), False, True)  # shape is (2*grad,)
-        self.means = tf.Variable(tf.zeros((2*m,)), False, True)
-        self.stds = tf.Variable(tf.zeros((2*m,)), False, True)
-        self.lr = tf.cast(lr, tf.float32)
         
-    def get_baseline(self, states):
-        """Given batch of states, returns expectation estimates for the optimal baseline."""
-        return self.baseline.value()
-    
-    def unnormalize(self, baselines):
-        """Given output of get_baseline, generate actual baseline values."""
-        m = self.m
-        if self.n==0:
-            return baselines[:m]/baselines[m:]
-        else:
-            mean = self.means.value()
-            stdev = self.stds.value()
-            out = stdev*baselines+mean
-            top, bot = out[:m], out[m:]
-            mean = mean[m:]
-            bot = tf.math.maximum(bot, self.c*mean)
-            return top/bot
         
-    def normalize(self, targets):
-        """Normalize targets for expectation estimates."""
-        new_mean = tf.math.reduce_mean(targets, axis=0)
-        new_std = tf.math.reduce_std(targets, axis=0)
-        old_means = self.means.value()
-        old_stds = self.stds.value()
-        means = (1-self.lr)*old_means+self.lr*new_mean
-        stds = (1-self.lr)*old_stds+self.lr*new_std
-        if self.n==0:
-            self.n.assign(tf.cast(1, tf.int32))
-            self.means.assign(new_mean)
-            self.stds.assign(new_std)
-            return (targets-new_mean)/new_std
-        else:
-            self.means.assign(means)
-            self.stds.assign(stds)
-            return (targets-old_means)/old_stds
-            
-    def update(self, targets):
-        """Gradient update."""
-        targets = tf.math.reduce_mean(targets, axis=0)
-        temp = self.baseline.value()
-        temp = (1-2*self.lr)*temp + 2*self.lr*targets
-        self.baseline.assign(temp)
+
 
 
 # class RegularBaseline(SimpleMLP):
