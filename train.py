@@ -60,7 +60,7 @@ if __name__ == '__main__':
     # training loop and reporting
     n_updates = total_transitions // (n_envs*nsteps)
     ep_rewards_list = []
-    vars_list = []
+    vars_list = []  # variance with optimal baselines if baseline_type = 'both'
     vars2_list = []
     pbar = tqdm.tqdm(range(n_updates))
     pbar.set_description('Calculating first iteration')
