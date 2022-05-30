@@ -12,7 +12,7 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
                 policy_activation, action_clip, means_activation, stdev_type, stdev_offset, stdev_min,
                 value_num_hidden, value_activation, value_normalization, value_type,
                 gamma, kappa, ppo_clip, global_clipnorm, optimizer, policy_lr, value_lr,
-                baseline_type, baseline_args, baseline_bounds, baseline_lr):
+                baseline_type, baseline_args, pp_baseline_args, baseline_lr):
     """Initialize all objects needed for training loop.
 
     Args:
@@ -55,9 +55,8 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
         baseline_type: None or one of 'optimal', 'baseline', 'pp, or 'both'. If None, regular PPO. If
             'optimal', add optimal per-parameter baseline. If 'pp', add per-parameter optimal baseline.
             If 'both', add both optimal and per-parameter baseline.
-        baseline_args: tuple, minimum log gradient norm as multiple of the running mean, and
-            learning rate for exponential moving averages
-        baseline_bounds: tuple of minimum, maximum allowable baseline values
+        baseline_args: tuple, *args for optimal baseline class.
+        pp_baseline_args: tuple, *args for pp baseline class.
         baseline_lr: if baseline_type is 'optimal' or 'both', lr argument to pass to baseline optimizer.
     Returns:
         ppo: PPO class, whose step method implements an iteration of PPO.
@@ -114,9 +113,9 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
         baseline = OptimalBaseline(value_num_hidden, value_activation, *baseline_args)
         baseline.get_baseline(cur_states)
         baseline_optimizer = optimizer(learning_rate=baseline_lr, global_clipnorm=global_clipnorm)
-        pp_baseline = PerParameterBaseline(policy.trainable_variables, baseline_args[1])
+        pp_baseline = PerParameterBaseline(policy.trainable_variables, *pp_baseline_args)
         ppo = OptimalPPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
-              ppo_clip, continuous_actions, baseline, pp_baseline, baseline_optimizer, baseline_bounds)
+              ppo_clip, continuous_actions, baseline, pp_baseline, baseline_optimizer)
     return ppo, cur_states
 
 class LinearDecreaseLR:
@@ -133,7 +132,7 @@ class LinearDecreaseLR:
         self.count = self.count+1
         return self.lr_max - (self.lr_max-self.lr_min)*max(update/(self.n_updates-1), 1)
 
-def plot_ep_rewards(ep_rewards_list, vars_list, n_envs, nsteps):
+def plot_ep_rewards(ep_rewards_list, vars_list, n_envs, nsteps, vars2_list=None):
     plt.figure(figsize=(14.22, 8))
     plt.subplot(1,2,1)
     n_updates = len(ep_rewards_list)

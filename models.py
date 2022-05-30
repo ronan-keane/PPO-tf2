@@ -291,13 +291,14 @@ def normalize_value(value):
 
 class OptimalBaseline(SimpleMLP):
     """Regular MLP for estimating the optimal baseline."""
-    def __init__(self, num_hidden, activation, minimum_denominator, lr):
+    def __init__(self, num_hidden, activation, bounds, minimum_denominator, lr):
         super().__init__(num_hidden, activation, 2)
         self.n = tf.Variable(tf.cast(0, tf.int32), False, True)
         self.lr = tf.cast(lr, tf.float32)
         self.c = tf.Variable(tf.cast(minimum_denominator, tf.float32), False, True)
         self.means = tf.Variable(tf.zeros((1,2)), False, True)
         self.stds = tf.Variable(tf.zeros((1,2)), False, True)
+        self.bounds = (tf.cast(bounds[0], tf.float32), tf.cast(bounds[1], tf.float32))
 
     def get_baseline(self, states):
         """Given batch of states, returns expectation estimates for the optimal baseline.
@@ -307,12 +308,12 @@ class OptimalBaseline(SimpleMLP):
         Returns:
             tf.float32 tensor of shape (batch_size, 2), giving the numerator and denominator of each baseline
         """
-        batch_size = tf.shape(states)[0]
-        mean_state = tf.reduce_mean(states, axis=0, keepdims=True)
-        std_state = tf.math.reduce_std(states, axis=0, keepdims=True)
-        extra_state = tf.concat([mean_state, std_state], 1)
-        extra_state = tf.tile(extra_state, [batch_size, 1])
-        states = tf.concat([states, extra_state], 1)
+        # batch_size = tf.shape(states)[0]
+        # mean_state = tf.reduce_mean(states, axis=0, keepdims=True)
+        # std_state = tf.math.reduce_std(states, axis=0, keepdims=True)
+        # extra_state = tf.concat([mean_state, std_state], 1)
+        # extra_state = tf.tile(extra_state, [batch_size, 1])
+        # states = tf.concat([states, extra_state], 1)
         out = self.call(states)  # shape is (batch_size, 2)
         return out
 
@@ -327,7 +328,7 @@ class OptimalBaseline(SimpleMLP):
             top, bot = out[:,0], out[:,1]
             mean = mean[0,1]
             bot = tf.math.maximum(bot, self.c*mean)
-            return top/bot
+            return tf.clip_by_value(top/bot, *self.bounds)
 
     def normalize(self, targets):
         """Normalize targets for expectation estimates."""
@@ -350,18 +351,30 @@ class OptimalBaseline(SimpleMLP):
 
 class PerParameterBaseline:
     """A per-parameter baseline which is constant over all states."""
-    def __init__(self, trainable_variables, lr):
+    def __init__(self, trainable_variables, bounds, lr):
+        self.n = tf.Variable(tf.cast(True, tf.bool), False)
         m = 0
         for i in trainable_variables:
             m += tf.math.reduce_prod(tf.shape(i))
-        self.baseline = tf.Variable(tf.concat([tf.zeros((m,)), 1e-6*tf.ones((m,))], axis=0), False, True)  # shape is (2*grad,)
+        self.m = tf.zeros((m,)).shape[0]
+        self.baseline = tf.Variable(tf.zeros((2*m,)), False)
         self.lr = tf.cast(2*lr, tf.float32)
+        self.bounds = (tf.cast(bounds[0], tf.float32), tf.cast(bounds[1], tf.float32))
+        
+    def get_baseline(self):
+        baselines = self.baseline.value()
+        baselines = tf.math.divide_no_nan(baselines[:self.m], baselines[self.m:])
+        return tf.clip_by_value(baselines, *self.bounds)
             
     def update(self, targets):
         """Gradient update."""
-        temp = self.baseline.value()
-        temp = (1-self.lr)*temp + self.lr*targets
-        self.baseline.assign(temp)
+        if self.n:
+            self.baseline.assign(targets)
+            self.n.assign(tf.cast(False, tf.bool))
+        else:
+            temp = self.baseline.value()
+            temp = (1-self.lr)*temp + self.lr*targets
+            self.baseline.assign(temp)
         
         
 # class PerParameterBaseline:
