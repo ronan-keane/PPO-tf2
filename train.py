@@ -46,7 +46,7 @@ if __name__ == '__main__':
     lr_max_baseline = 1e-4
     ############ AMOUNT OF TRAINING #############
     total_transitions = 1000000  # total number of sampled transitions, combined over all environments
-    reward_threshold = 300  # stop training if last env.mem episodes are above this threshold
+    reward_threshold = 1000  # stop training if last env.mem episodes are above this threshold
 
     # setup
     policy_lr = LinearDecreaseLR(lr_max_policy, lr_min_policy, total_transitions, n_envs, nepochs, nsteps, batch_size)
