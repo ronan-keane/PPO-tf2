@@ -308,12 +308,6 @@ class OptimalBaseline(SimpleMLP):
         Returns:
             tf.float32 tensor of shape (batch_size, 2), giving the numerator and denominator of each baseline
         """
-        # batch_size = tf.shape(states)[0]
-        # mean_state = tf.reduce_mean(states, axis=0, keepdims=True)
-        # std_state = tf.math.reduce_std(states, axis=0, keepdims=True)
-        # extra_state = tf.concat([mean_state, std_state], 1)
-        # extra_state = tf.tile(extra_state, [batch_size, 1])
-        # states = tf.concat([states, extra_state], 1)
         out = self.call(states)  # shape is (batch_size, 2)
         return out
 
@@ -360,125 +354,77 @@ class PerParameterBaseline:
         self.baseline = tf.Variable(tf.zeros((2*m,)), False)
         self.lr = tf.cast(2*lr, tf.float32)
         self.bounds = (tf.cast(bounds[0], tf.float32), tf.cast(bounds[1], tf.float32))
-        
+
     def get_baseline(self):
         baselines = self.baseline.value()
         baselines = tf.math.divide_no_nan(baselines[:self.m], baselines[self.m:])
         return tf.clip_by_value(baselines, *self.bounds)
-            
+
     def update(self, targets):
         """Gradient update."""
         if self.n:
-            self.baseline.assign(targets)
+            self.baseline.assign(self.lr*targets)
             self.n.assign(tf.cast(False, tf.bool))
         else:
             temp = self.baseline.value()
             temp = (1-self.lr)*temp + self.lr*targets
             self.baseline.assign(temp)
-        
-        
-# class PerParameterBaseline:
-#     """A per-parameter baseline which is constant over all states."""
-#     def __init__(self, trainable_variables, minimum_denominator, lr):
-#         self.n = tf.Variable(tf.cast(0, tf.int32), False, True)
-#         m = 0
-#         for i in trainable_variables:
-#             m += tf.math.reduce_prod(tf.shape(i))
-#         self.m = m
-#         self.c = tf.Variable(tf.cast(minimum_denominator, tf.float32), False, True)
-#         self.baseline = tf.Variable(tf.concat([tf.zeros((m,)), 1e-6*tf.ones((m,))], axis=0), False, True)  # shape is (2*grad,)
-#         self.means = tf.Variable(tf.zeros((2*m,)), False, True)
-#         self.stds = tf.Variable(tf.zeros((2*m,)), False, True)
-#         self.lr = tf.cast(lr, tf.float32)
-        
-#     def get_baseline(self, states):
-#         """Given batch of states, returns expectation estimates for the optimal baseline."""
-#         return self.baseline.value()
-    
-#     def unnormalize(self, baselines):
-#         """Given output of get_baseline, generate actual baseline values."""
-#         m = self.m
-#         if self.n==0:
-#             return baselines[:m]/baselines[m:]
-#         else:
-#             mean = self.means.value()
-#             stdev = self.stds.value()
-#             out = stdev*baselines+mean
-#             top, bot = out[:m], out[m:]
-#             mean = mean[m:]
-#             bot = tf.math.maximum(bot, self.c*mean)
-#             return tf.math.divide_no_nan(top, bot)
-        
-#     def normalize(self, targets):
-#         """Normalize targets for expectation estimates."""
-#         new_mean = tf.math.reduce_mean(targets, axis=0)
-#         new_std = tf.math.reduce_std(targets, axis=0)
-#         old_means = self.means.value()
-#         old_stds = self.stds.value()
-#         means = (1-self.lr)*old_means+self.lr*new_mean
-#         stds = (1-self.lr)*old_stds+self.lr*new_std
-#         if self.n==0:
-#             self.n.assign(tf.cast(1, tf.int32))
-#             self.means.assign(new_mean)
-#             self.stds.assign(new_std)
-#             return tf.math.divide_no_nan(targets-new_mean, new_std)
-#         else:
-#             self.means.assign(means)
-#             self.stds.assign(stds)
-#             return tf.math.divide_no_nan(targets-old_means, old_stds)
-            
-#     def update(self, targets):
-#         """Gradient update."""
-#         targets = tf.math.reduce_mean(targets, axis=0)
-#         temp = self.baseline.value()
-#         temp = (1-2*self.lr)*temp + 2*self.lr*targets
-#         self.baseline.assign(temp)
-        
-        
 
 
+class RegularBaseline(SimpleMLP):
+    """A regular state-dependent baseline."""
+    def __init__(self, num_hidden, activation):
+        super().__init__(num_hidden, activation, 1)
 
-# class RegularBaseline(SimpleMLP):
-#     """A regular state-dependent baseline."""
-#     def __init__(self, num_hidden, activation):
-#         super().__init__(num_hidden, activation, 1)
+    def get_baseline(self, states):
+        return self.call(states)
 
-#     def get_baseline(self, states):
-#         return self.call(states)
+class KPerParameterBaseline:
+    """Estimates K different per-parameter constant baselines."""
+    # statedim - dimension of state space. xi_bounds : tensor of shape (k,) with dtype tf.float32, giving cut off
+    # for different baselines.
+    def __init__(self, trainable_variables, statedim, xi_bounds, bounds, lr):
+        m = 0
+        for i in trainable_variables:
+            m += tf.math.reduce_prod(tf.shape(i))
+        self.m = tf.zeros((m,)).shape[0]
+        self.xi_bounds = tf.convert_to_tensor(xi_bounds, tf.float32)
+        k = tf.shape(xi_bounds)[0]+1
+        self.k = k
+        self.baseline = tf.Variable(tf.zeros((k, 2*m)), False, True)
+        self.lr = tf.cast(2*lr, tf.float32)
+        self.bounds = (tf.cast(bounds[0], tf.float32), tf.cast(bounds[1], tf.float32))
+        self.embedding = 1 + tf.random.normal((statedim, 1), dtype=tf.float32)
 
+    def get_baseline(self, states):
+        """Given batch of states, returns corresponding baselines and also xi (indices for each baseline).
 
-# class KPerParameterBaseline:
-#     """Estimates K different per-parameter constant baselines."""
-#     # inds is a list of ints. For each entry, \xi encodes whether that state dimension index is > 0 or < 0.
-#     # So there are 2**len(inds) total baselines, with a maximum number of 2**state_dim constant baselines.
-#     def __init__(self, trainable_variables, inds, lr):
-#         assert len(inds) > 0
-#         m = 0
-#         for i in trainable_variables:
-#             m += tf.math.reduce_prod(tf.shape(i))
-#         self.m = m
-#         self.baseline = tf.Variable(tf.zeros((2**len(inds), 2*m))+0.1, False, True)
-#         self.lr = tf.cast(lr, tf.float32)
-#         self.inds = inds
+        Args:
+            states: tf.float32 tensor of shape (batch_size, state_dim)
+        Returns:
+            tf.float32 tensor of shape (batch_size, grad_dim) giving the per-parameter baselines
+            xi: tf.int32 tensor of shape (batch_size,) giving the index of which per-parameter baseline was used
+        """
+        xi = tf.matmul(states, self.embedding)  # (batch_size, 1)
+        xi = tf.math.reduce_sum(tf.cast(tf.math.less(xi, self.xi_bounds), tf.int32), axis=1)
+        baselines = self.baseline.value()
+        baselines = tf.math.divide_no_nan(baselines[:,:self.m], baselines[:,self.m:])
+        baselines = tf.clip_by_value(baselines, *self.bounds)
+        return baselines, xi
 
-#     def get_baseline(self, states):
-#         """Given batch of states, returns corresponding baselines and also xi (indices for each baseline).
-
-#         Args:
-#             states: tf.float32 tensor of shape (batch_size, state_dim)
-#         Returns:
-#             tf.float32 tensor of shape (batch_size, grad_dim) giving the per-parameter baselines
-#             xi: tf.int32 tensor of shape (batch_size,) giving the index of which per-parameter baseline was used
-#         """
-#         xi = tf.gather(states, self.inds, axis=1)
-#         xi = tf.cast(tf.math.greater(xi, 0), tf.int32)
-#         xi = tf.math.reduce_sum(xi*2**tf.range(tf.shape(xi)[1], dtype=tf.int32), axis=1)  # shape is (batch_size,)
-#         baselines = tf.gather(self.baseline, xi, axis=0)
-#         baselines = baselines[:,:self.m]/baselines[:,self.m:]  # shape is (batch_size, grad)
-#         return baselines, xi
-
-#     def update(self, targets, xi):
-#         """Gradient update."""
-#         grad = self.lr*2*(targets - tf.gather(self.baseline, xi, axis=0))
-#         self.baseline.scatter_nd_add(tf.expand_dims(xi, axis=1), grad)
-
+    def update(self, targets, xi):
+        """Gradient update."""
+        baselines = self.baseline.value()
+        batch_size = tf.shape(targets)[0]
+        inds = tf.range(batch_size, dtype=tf.int32)
+        use_targets = tf.TensorArray(tf.float32, size=(self.k,), dynamic_size=False)
+        for i in tf.range(self.k, dtype=tf.int32):
+            cur_inds = tf.boolean_mask(inds, xi==i)
+            if tf.shape(cur_inds)[0]>0:
+                cur_targets = tf.math.reduce_mean(tf.gather(targets, cur_inds), 0)
+            else:
+                cur_targets = baselines[i,:]
+            use_targets = use_targets.write(i, cur_targets)
+        use_targets = use_targets.stack()
+        temp = (1-self.lr)*baselines + self.lr*use_targets
+        self.baseline.assign(temp)

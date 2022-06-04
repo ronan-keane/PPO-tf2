@@ -1,7 +1,7 @@
 from environment import TFEnv, make_tf_env_step
 from models import DiscreteActor, MeanStdNetwork, MeanNetworkAndStdNetwork, MeanNetworkAndStd,\
     add_tanh_clipping, add_clipping, TimeAwareValue, TimeAwareValue2, RegularValue, normalize_value,\
-    OptimalBaseline, PerParameterBaseline
+    OptimalBaseline, KPerParameterBaseline, RegularBaseline
 from ppo import PPO, OptimalPPO
 import matplotlib.pyplot as plt
 import numpy as np
@@ -52,12 +52,12 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
         optimizer: tf.keras.optimizers to instantiate for both policy and value function.
         policy_lr: float, callable that returns learning rate, or tf LearningRateSchedule. For policy.
         value_lr: float, callable that returns learning rate, or tf LearningRateSchedule. For value function.
-        baseline_type: None or one of 'optimal', 'baseline', 'pp, or 'both'. If None, regular PPO. If
+        baseline_type: None or one of 'optimal', 'double', or 'pp'. If None, regular PPO. If
             'optimal', add optimal per-parameter baseline. If 'pp', add per-parameter optimal baseline.
-            If 'both', add both optimal and per-parameter baseline.
+            If 'double', have second, regular baseline.
         baseline_args: tuple, *args for optimal baseline class.
         pp_baseline_args: tuple, *args for pp baseline class.
-        baseline_lr: if baseline_type is 'optimal' or 'both', lr argument to pass to baseline optimizer.
+        baseline_lr: if baseline_type is 'optimal' or 'double', lr argument to pass to baseline optimizer.
     Returns:
         ppo: PPO class, whose step method implements an iteration of PPO.
     """
@@ -105,17 +105,25 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
     value_optimizer = optimizer(learning_rate=value_lr, global_clipnorm=global_clipnorm)
     # make PPO depending on whether it's optimal baseline or regular
     ppo_clip = tf.cast(ppo_clip, tf.float32)
-    assert(baseline_type is None or baseline_type=='both')
     if baseline_type is None:
         ppo = PPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
               ppo_clip, continuous_actions)
-    elif baseline_type=='both':
+    elif baseline_type=='optimal':
         baseline = OptimalBaseline(value_num_hidden, value_activation, *baseline_args)
         baseline.get_baseline(cur_states)
         baseline_optimizer = optimizer(learning_rate=baseline_lr, global_clipnorm=global_clipnorm)
-        pp_baseline = PerParameterBaseline(policy.trainable_variables, *pp_baseline_args)
         ppo = OptimalPPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
-              ppo_clip, continuous_actions, baseline, pp_baseline, baseline_optimizer)
+              ppo_clip, continuous_actions, baseline, None, baseline_optimizer, baseline_type)
+    elif baseline_type=='double':
+        baseline = RegularBaseline(value_num_hidden, value_activation)
+        baseline.get_baseline(cur_states)
+        baseline_optimizer = optimizer(learning_rate=baseline_lr, global_clipnorm=global_clipnorm)
+        ppo = OptimalPPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
+              ppo_clip, continuous_actions, baseline, None, baseline_optimizer, baseline_type)
+    elif baseline_type=='pp':
+        pp_baseline = KPerParameterBaseline(policy.trainable_variables, tf.shape(cur_states)[1], *pp_baseline_args)
+        ppo = OptimalPPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
+              ppo_clip, continuous_actions, None, pp_baseline, None, baseline_type)
     return ppo, cur_states
 
 class LinearDecreaseLR:
