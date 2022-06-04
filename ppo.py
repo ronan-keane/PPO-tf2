@@ -49,15 +49,15 @@ class OptimalPPO:
         self.use_safeguard = tf.cast(True, tf.bool)
         self.reset_counter = tf.cast(-40, tf.int32)
         if baseline_type=='optimal':
-            self.step = ppo_step_optimal
+            self.step_fn = ppo_step_optimal
         elif baseline_type=='double':
-            self.step = ppo_step_double
+            self.step_fn = ppo_step_double
         elif baseline_type=='pp':
-            self.step = ppo_step_pp
+            self.step_fn = ppo_step_pp
 
     def step(self, cur_states, nepochs, nsteps, batch_size):
         """Generates nsteps of experience and does PPO update for nepochs."""
-        cur_states, EVs, Vars, Vars2, use_safeguard, reset_counter = self.step(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
+        cur_states, EVs, Vars, Vars2, use_safeguard, reset_counter = self.step_fn(self.policy, self.value, self.policy_optimizer, self.value_optimizer,
             self.tf_env_step, nepochs, nsteps, batch_size, cur_states, self.gamma, self.kappa, self.T,
             self.clip, self.is_cont, self.baseline, self.pp_baseline, self.baseline_optimizer, self.use_safeguard, self.reset_counter)
         if reset_counter > 40:
@@ -333,7 +333,7 @@ def ppo_step_double(policy, value, policy_optimizer, value_optimizer, tf_env_ste
         returns = tf.reshape(returns, [n_transitions])
         advantages = tf.reshape(advantages, [n_transitions])
         # baselines are computed once per epoch
-        baselines = baseline.get_baseline(states)
+        baselines = tf.squeeze(baseline.get_baseline(states))
 
         EVs = EVs.write(i, EV)  # explained variance
         s1 = tf.zeros((m,)) # s1 and s2 track variance during training
@@ -673,7 +673,7 @@ def mb_step_double(policy, value, states, actions, action_log_probs, times, retu
                                   tf.math.logical_and(tf.math.less(advantages,0), tf.math.less(impt_weights, 1-clip)))
     ppo_mask = tf.cast(tf.logical_not(ppo_mask), tf.float32)
     output_gradients = -(advantages-baselines)*ppo_mask*impt_weights
-    ghat = g.gradient(new_log_probs, policy.trainable_variables, output_gradients=output_gradients)
+    ghat = g.gradient(new_log_probs, policy.trainable_variables, output_gradients=tf.expand_dims(output_gradients, 1))
     policy_optimizer.apply_gradients(zip(ghat, policy.trainable_variables))
     # update variance of policy gradient
     ghat = flatten_grad(ghat)
@@ -681,7 +681,7 @@ def mb_step_double(policy, value, states, actions, action_log_probs, times, retu
     s2 = s2 + ghat**2
     # calculate ghat_sf_only
     output_gradients = -advantages*ppo_mask*impt_weights
-    ghat_sf_only = g.gradient(new_log_probs, policy.trainable_variables, output_gradients=output_gradients)
+    ghat_sf_only = g.gradient(new_log_probs, policy.trainable_variables, output_gradients=tf.expand_dims(output_gradients, 1))
     # update variance of vanilla policy gradient
     ghat_sf_only = flatten_grad(ghat_sf_only)
     s12 = s12 + ghat_sf_only
@@ -694,8 +694,9 @@ def mb_step_double(policy, value, states, actions, action_log_probs, times, retu
     # second baseline update
     with tf.GradientTape() as g:
         baselines = baseline.get_baseline(states)
-    baseline_gradient = g.gradient(baselines, baseline.trainable_variables, output_gradients=-2*(advantages-baselines))
+    baseline_gradient = g.gradient(baselines, baseline.trainable_variables, output_gradients=-2*(tf.expand_dims(advantages,1)-baselines))
     baseline_optimizer.apply_gradients(zip(baseline_gradient, baseline.trainable_variables))
+    return s1, s2, s12, s22
 
 
 @tf.function

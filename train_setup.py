@@ -105,7 +105,6 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
     value_optimizer = optimizer(learning_rate=value_lr, global_clipnorm=global_clipnorm)
     # make PPO depending on whether it's optimal baseline or regular
     ppo_clip = tf.cast(ppo_clip, tf.float32)
-    assert(baseline_type is None or baseline_type=='both')
     if baseline_type is None:
         ppo = PPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
               ppo_clip, continuous_actions)
