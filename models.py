@@ -417,7 +417,7 @@ class KPerParameterBaseline:
         baselines = self.baseline.value()
         batch_size = tf.shape(targets)[0]
         inds = tf.range(batch_size, dtype=tf.int32)
-        use_targets = tf.TensorArray(tf.float32, size=(self.k,), dynamic_size=False)
+        use_targets = tf.TensorArray(tf.float32, size=self.k, dynamic_size=False)
         for i in tf.range(self.k, dtype=tf.int32):
             cur_inds = tf.boolean_mask(inds, xi==i)
             if tf.shape(cur_inds)[0]>0:
