@@ -1,7 +1,7 @@
 from environment import TFEnv, make_tf_env_step
 from models import DiscreteActor, MeanStdNetwork, MeanNetworkAndStdNetwork, MeanNetworkAndStd,\
     add_tanh_clipping, add_clipping, TimeAwareValue, TimeAwareValue2, RegularValue, normalize_value,\
-    OptimalBaseline, KPerParameterBaseline, RegularBaseline
+    OptimalBaseline, PerParameterBaseline, KPerParameterBaseline, RegularBaseline
 from ppo import PPO, OptimalPPO
 import matplotlib.pyplot as plt
 import numpy as np
@@ -121,7 +121,10 @@ def train_setup(env_list, continuous_actions, action_dim, T, env_kwargs, policy_
         ppo = OptimalPPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
               ppo_clip, continuous_actions, baseline, None, baseline_optimizer, baseline_type)
     elif baseline_type=='pp':
-        pp_baseline = KPerParameterBaseline(policy.trainable_variables, tf.shape(cur_states)[1], *pp_baseline_args)
+        if pp_baseline_args[0]==None:
+            pp_baseline = PerParameterBaseline(policy.trainable_variables, *pp_baseline_args[1:])
+        else:
+            pp_baseline = KPerParameterBaseline(policy.trainable_variables, tf.shape(cur_states)[1], *pp_baseline_args)
         ppo = OptimalPPO(policy, value, policy_optimizer, value_optimizer, tf_env, tf_env_step, gamma, kappa, T,
               ppo_clip, continuous_actions, None, pp_baseline, None, baseline_type)
     return ppo, cur_states

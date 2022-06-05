@@ -449,8 +449,8 @@ def ppo_step_pp(policy, value, policy_optimizer, value_optimizer, tf_env_step, n
             mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns, mb_advantages = \
                 tf.gather(states, ind), tf.gather(actions, ind), tf.gather(action_log_probs, ind), \
                 tf.gather(times, ind), tf.gather(returns, ind), tf.gather(advantages, ind)
-            mb_xi = tf.gather(xi, ind)
-            mb_baselines = tf.gather(baselines, mb_xi)
+            mb_xi = xi  # tf.gather(xi, ind)
+            mb_baselines = baselines  # tf.gather(baselines, mb_xi)
 
             # gradient updates
             s1, s2, s12, s22 = mb_step_pp(policy, value, mb_states, mb_actions, mb_action_log_probs, mb_times, mb_returns,
@@ -577,13 +577,15 @@ def reset_optimizer_weights(optimizer):
         var.assign(tf.zeros_like(var))
 
 def reset_baselines(baseline, pp_baseline, baseline_optimizer):
-    reset_model_weights(baseline)
-    baseline.n.assign(tf.cast(0, tf.int32))
-    baseline.means.assign(tf.zeros((1,2)))
-    baseline.stds.assign(tf.zeros((1,2)))
-    reset_optimizer_weights(baseline_optimizer)
-    pp_baseline.baseline.assign(tf.zeros((2*pp_baseline.m,)))
-    pp_baseline.n.assign(tf.cast(True, tf.bool))
+    if baseline is not None:
+        reset_model_weights(baseline)
+        baseline.n.assign(tf.cast(0, tf.int32))
+        baseline.means.assign(tf.zeros((1,2)))
+        baseline.stds.assign(tf.zeros((1,2)))
+        reset_optimizer_weights(baseline_optimizer)
+    if pp_baseline is not None:
+        k, m = pp_baseline.k, pp_baseline.m
+        pp_baseline.baseline.assign(tf.zeros((k, 2*m)))
 
 
 # @tf.function
@@ -711,7 +713,7 @@ def mb_step_pp(policy, value, states, actions, action_log_probs, times, returns,
                                   tf.math.logical_and(tf.math.less(advantages,0), tf.math.less(impt_weights, 1-clip)))
     ppo_mask = tf.cast(tf.logical_not(ppo_mask), tf.float32)
     log_grads = tf.expand_dims(impt_weights, axis=1)*log_grads
-    temp = (tf.expand_dims(advantages, 1) - baselines)*tf.expand_dims(ppo_mask, 1)
+    temp = (tf.expand_dims(advantages, 1) - tf.expand_dims(baselines, 0))*tf.expand_dims(ppo_mask, 1)
     ghat = tf.math.reduce_sum(temp*log_grads, 0)
     # update variance of policy gradient
     s1 = s1 + ghat
@@ -735,6 +737,6 @@ def mb_step_pp(policy, value, states, actions, action_log_probs, times, returns,
     # per parameter update
     targets = log_grads*tf.expand_dims(ghat_sf_only, 0)
     targets_denom = tf.math.square(log_grads)
-    targets = tf.concat([targets, targets_denom], 1)
+    targets = tf.concat([tf.math.reduce_mean(targets, 0), tf.math.reduce_mean(targets_denom, 0)], 0)
     baseline.update(targets, xi)
     return s1, s2, s12, s22

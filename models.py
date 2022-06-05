@@ -355,20 +355,16 @@ class PerParameterBaseline:
         self.lr = tf.cast(2*lr, tf.float32)
         self.bounds = (tf.cast(bounds[0], tf.float32), tf.cast(bounds[1], tf.float32))
 
-    def get_baseline(self):
+    def get_baseline(self, *args):
         baselines = self.baseline.value()
         baselines = tf.math.divide_no_nan(baselines[:self.m], baselines[self.m:])
-        return tf.clip_by_value(baselines, *self.bounds)
+        return tf.clip_by_value(baselines, *self.bounds), None
 
-    def update(self, targets):
+    def update(self, targets, *args):
         """Gradient update."""
-        if self.n:
-            self.baseline.assign(self.lr*targets)
-            self.n.assign(tf.cast(False, tf.bool))
-        else:
-            temp = self.baseline.value()
-            temp = (1-self.lr)*temp + self.lr*targets
-            self.baseline.assign(temp)
+        temp = self.baseline.value()
+        temp = (1-self.lr)*temp + self.lr*targets
+        self.baseline.assign(temp)
 
 
 class RegularBaseline(SimpleMLP):
