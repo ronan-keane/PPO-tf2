@@ -584,8 +584,9 @@ def reset_baselines(baseline, pp_baseline, baseline_optimizer):
         baseline.stds.assign(tf.zeros((1,2)))
         reset_optimizer_weights(baseline_optimizer)
     if pp_baseline is not None:
-        k, m = pp_baseline.k, pp_baseline.m
-        pp_baseline.baseline.assign(tf.zeros((k, 2*m)))
+        # k, m = pp_baseline.k, pp_baseline.m
+        # pp_baseline.baseline.assign(tf.zeros((k, 2*m)))
+        pp_baseline.baseline.assign(tf.zeros((2*pp_baseline.m,)))
 
 
 # @tf.function
