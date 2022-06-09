@@ -84,7 +84,7 @@ class StdLayer(tf.keras.layers.Layer):
     """A layer which simply returns its parameter values."""
     def __init__(self, dimension):
         super().__init__()
-        self.out = self.add_weight(shape=(1,dimension), initializer=tf.keras.initializers.Zeros(), trainable=True)
+        self.out = self.add_weight(name='stdev_param', shape=(1,dimension), initializer=tf.keras.initializers.Zeros(), trainable=True)
 
     def call(self, inputs):
         batch_size = tf.shape(inputs)[0]

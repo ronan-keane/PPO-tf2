@@ -3,3 +3,6 @@
 *.pkl
 experiment.py
 plot_experiment.py
+checkpoint
+*.data-00000-of-00001
+*.index
