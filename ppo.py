@@ -716,12 +716,14 @@ def mb_step_pp(policy, value, states, actions, action_log_probs, times, returns,
     log_grads = tf.expand_dims(impt_weights, axis=1)*log_grads
     temp = (tf.expand_dims(advantages, 1) - tf.expand_dims(baselines, 0))*tf.expand_dims(ppo_mask, 1)
     ghat = tf.math.reduce_sum(temp*log_grads, 0)
+    # ghat = clear_nan_inf(ghat)
     # update variance of policy gradient
     s1 = s1 + ghat
     s2 = s2 + ghat**2
     # calculate ghat_sf_only
     advantages = advantages*ppo_mask
     ghat_sf_only = tf.squeeze(tf.matmul(tf.expand_dims(advantages,0), log_grads))
+    # ghat_sf_only = clear_nan_inf(ghat_sf_only)
     # update variance of vanilla policy gradient
     s12 = s12 + ghat_sf_only
     s22 = s22 + ghat_sf_only**2
@@ -741,3 +743,10 @@ def mb_step_pp(policy, value, states, actions, action_log_probs, times, returns,
     targets = tf.concat([tf.math.reduce_mean(targets, 0), tf.math.reduce_mean(targets_denom, 0)], 0)
     baseline.update(targets, xi)
     return s1, s2, s12, s22
+
+def clear_nan_inf(values):
+    """Remove all NaN and inf from values."""
+    values_not_nan = tf.dtypes.cast(tf.math.logical_not(tf.math.is_nan(values)), dtype=tf.float32)
+    values = tf.math.multiply_no_nan(values, values_not_nan)
+    values_not_inf = tf.dtypes.cast(tf.math.logical_not(tf.math.is_inf(values)), dtype=tf.float32)
+    return tf.math.multiply_no_nan(values, values_not_inf)
