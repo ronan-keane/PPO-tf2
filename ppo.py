@@ -529,7 +529,7 @@ def mb_step(policy, value, states, actions, action_log_probs, times, returns, ad
     ppo_mask = tf.cast(tf.logical_not(ppo_mask), tf.float32)
     policy_gradient = g.gradient(new_log_probs, policy.trainable_variables,
                                  output_gradients=tf.expand_dims(-advantages*impt_weights*ppo_mask, axis=1))
-    policy_optimizer.apply_gradients(zip(policy_gradient, policy.trainable_variables))
+    # policy_optimizer.apply_gradients(zip(policy_gradient, policy.trainable_variables))
     # update variance of policy gradient
     policy_gradient = flatten_grad(policy_gradient)
     s1 = s1 + policy_gradient
@@ -644,7 +644,7 @@ def mb_step_optimal(policy, value, states, actions, action_log_probs, times, ret
     if safeguard:
         ghat = ghat_sf_only
     ghat = reshape_grad(-ghat, policy.trainable_variables)
-    policy_optimizer.apply_gradients(zip(ghat, policy.trainable_variables))
+    # policy_optimizer.apply_gradients(zip(ghat, policy.trainable_variables))
     # value function update
     with tf.GradientTape() as g:
         values = value.get_values(states, times, gamma, T)
@@ -677,7 +677,7 @@ def mb_step_double(policy, value, states, actions, action_log_probs, times, retu
     ppo_mask = tf.cast(tf.logical_not(ppo_mask), tf.float32)
     output_gradients = -(advantages-baselines)*ppo_mask*impt_weights
     ghat = g.gradient(new_log_probs, policy.trainable_variables, output_gradients=tf.expand_dims(output_gradients, 1))
-    policy_optimizer.apply_gradients(zip(ghat, policy.trainable_variables))
+    # policy_optimizer.apply_gradients(zip(ghat, policy.trainable_variables))
     # update variance of policy gradient
     ghat = flatten_grad(ghat)
     s1 = s1 + ghat
@@ -731,7 +731,7 @@ def mb_step_pp(policy, value, states, actions, action_log_probs, times, returns,
     if safeguard:
         ghat = ghat_sf_only
     ghat = reshape_grad(-ghat, policy.trainable_variables)
-    policy_optimizer.apply_gradients(zip(ghat, policy.trainable_variables))
+    # policy_optimizer.apply_gradients(zip(ghat, policy.trainable_variables))
     # value function update
     with tf.GradientTape() as g:
         values = value.get_values(states, times, gamma, T)
