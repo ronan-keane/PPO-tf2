@@ -4,6 +4,7 @@ import numpy as np
 import gym
 from train_setup import train_setup, LinearDecreaseLR, plot_ep_rewards
 import tqdm
+import pickle
 
 
 if __name__ == '__main__':
@@ -40,7 +41,7 @@ if __name__ == '__main__':
     nsteps = 1000  # each iteration samples nsteps transitions from each environment
     batch_size = 32  # mini-batch size for gradient updates
     ############ OPTIMAL BASELINES ##############
-    baseline_type = 'pp'
+    baseline_type = None
     baseline_args = ((-10, 10), 0.2, 1e-4,)
     pp_baseline_args = (None, (-10, 10), 1e-4)
     lr_max_baseline = 1e-4
@@ -76,6 +77,11 @@ if __name__ == '__main__':
             np.mean(ep_rewards), np.mean(ep_lens), np.mean(ev), np.mean(Vars), np.mean(Vars2))+', New ep rewards: '+new_rewards)
         if np.mean(ep_rewards) > reward_threshold:
             break
+        if i%20==0:
+            state_norm = ppo.env.return_normalization()
+            with open('walker-normalization-'+str(i)+'.pkl', 'wb') as f:
+                pickle.dump(state_norm, f)
+            ppo.policy.save_weights('walker-weights-'+str(i))
 
     plot_ep_rewards(ep_rewards_list, vars_list, n_envs, nsteps, vars2_list=vars2_list)
 

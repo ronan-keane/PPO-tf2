@@ -45,6 +45,7 @@ class TFEnv:
         self.n = 0.
         self.means = np.array([[0 for i in range(self.state_dim)]], dtype=np.float32)
         self.M = np.array([[0 for i in range(self.state_dim)]], dtype=np.float32)
+        self.is_frozen = False
 
     def step(self, batch_actions):
         """Does a single step for each environment. Needs to be wrapped in tf_env_step.
@@ -86,13 +87,23 @@ class TFEnv:
         return states, rewards, dones, times
 
     def apply_state_normalization(self, states):
-        for i in range(len(states)):
-            self.n += 1
-            delta = states[i] - self.means[0]
-            self.means[0] += delta/self.n
-            delta2 = states[i] - self.means[0]
-            self.M[0] += delta*delta2
+        if not self.is_frozen:
+            for i in range(len(states)):
+                self.n += 1
+                delta = states[i] - self.means[0]
+                self.means[0] += delta/self.n
+                delta2 = states[i] - self.means[0]
+                self.M[0] += delta*delta2
         return (states - self.means)/np.maximum((self.M/self.n),1e-4)**.5
+
+    def return_normalization(self):
+        return (self.means, self.M, self.n)
+
+    def freeze_normalization(self, means, M, n):
+        self.is_frozen = True
+        self.means = means
+        self.M = M
+        self.n = n
 
     def return_statistics(self):
         """Statistics to track and report during training.
