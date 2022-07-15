@@ -77,11 +77,11 @@ if __name__ == '__main__':
             np.mean(ep_rewards), np.mean(ep_lens), np.mean(ev), np.mean(Vars), np.mean(Vars2))+', New ep rewards: '+new_rewards)
         if np.mean(ep_rewards) > reward_threshold:
             break
-        if i%20==0:
-            state_norm = ppo.env.return_normalization()
-            with open('walker-normalization-'+str(i)+'.pkl', 'wb') as f:
-                pickle.dump(state_norm, f)
-            ppo.policy.save_weights('walker-weights-'+str(i))
+        # if i%20==0:
+        #     state_norm = ppo.env.return_normalization()
+        #     with open('walker-normalization-'+str(i)+'.pkl', 'wb') as f:
+        #         pickle.dump(state_norm, f)
+        #     ppo.policy.save_weights('walker-weights-'+str(i))
 
     plot_ep_rewards(ep_rewards_list, vars_list, n_envs, nsteps, vars2_list=vars2_list)
 
