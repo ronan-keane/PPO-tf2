@@ -31,4 +31,15 @@ for count, num in enumerate([20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 
     plt.subplots_adjust(bottom=0.15)
 
 
-
+#%% t test
+y_gae = []
+y_opt = []
+y_pp = []
+env = 'lander'
+for count, num in enumerate([20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240]):
+    out_var = plot_helper(num, env=env)
+    y = [np.mean(i) for i in out_var]
+    yerr = [np.std(i) for i in out_var]
+    y_gae.append(y[3])
+    y_opt.append(y[4])
+    y_pp.append(y[5])
