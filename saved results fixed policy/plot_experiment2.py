@@ -24,8 +24,9 @@ for count, num in enumerate([20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 
     yerr = [np.std(i) for i in out_var]
     x = [1,2,3,4,5,6]
     ax.errorbar(x, y, yerr, fmt='o', linewidth=2, capsize=6)
-    labels = ['reinforce', 'reinforce + optimal', 'reinforce + pp', 'gae', 'gae + optimal', 'gae + pp']
-    plt.xticks(x, labels)
+    labels = ['reinforce', 'reinforce + optimal', 'reinforce + pp', 'GAE', 'GAE + optimal', 'GAE + pp']
+    plt.xticks(x, labels, fontsize=5, rotation = -20)
+    plt.ylabel('Log Variance')
     plt.margins(0.2)
     plt.subplots_adjust(bottom=0.15)
 
