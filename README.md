@@ -1,12 +1,26 @@
+The deep reinforcement learning algorithm 'Proximal Policy Optimization' (PPO), implemented in tensorflow 2.
+
 # How to use
-Run train.py
+Running the **python script train.py** will create the environment, algorithm, report the algorithm progress while training, and plot the result. \
+To change the environment/algorithm configuration, directly edit train.py. See the function train_setup in train_setup.py to see the documentation for all options. 
+
+# Required Packages
+***Note: Installing Box2D on windows requires swig and c++ build tools to be installed. [Swig install guide](https://simpletutorials.com/c/c/nxw7mu26/installing-swig-on-windows) - [C++ build tools from microsoft](https://visualstudio.microsoft.com/visual-cpp-build-tools/)***
+```
+pip install tensorflow
+pip install gym[box2d]==0.25.2
+```
+
 
 ## Other Features
-- hopt.py does hyperparameter optimization using nni
+- Running the **python script hopt.py** will do a hyperparameter search using nni. 
+```
+pip install nni
+```
+To do the hyperparameter optimization, **hopt_eval.py** must be a modified version of **train.py**, which accepts the parameters from nni and then returns the result to nni. For configuring the hyperparameter search, you can refer to the [nni documentation.](https://nni.readthedocs.io/en/stable/tutorials/hpo_quickstart_tensorflow/main.html#step-2-define-search-space)
 
-- Branch optimal-baselines3-test has options to use PPO with optimal baselines (note: optimal baselines are slow)
 
-# Reference
+## Reference 
 If this code was helpful to your research, please consider citing the associated paper
 ```
 @article{optimal-baselines,
