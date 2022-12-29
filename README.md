@@ -23,11 +23,12 @@ To do the hyperparameter optimization, **hopt_eval.py** must be a modified versi
 ## Reference 
 If this code was helpful to your research, please consider citing the associated paper
 ```
-@article{optimal-baselines,
+@misc{optimal-baselines,
 title={Variance Reduction for Score Functions Using Optimal Baselines},
 author={Ronan Keane and H. Oliver Gao}, 
-journal={ },
-year={2022},
-volume={ }
+doi = {10.48550/ARXIV.2212.13587},
+url = {https://arxiv.org/abs/2212.13587},
+publisher = {arXiv},
+year={2022}
 }
 ```
